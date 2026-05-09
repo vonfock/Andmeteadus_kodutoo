@@ -1,0 +1,55 @@
+{
+  "name": "Estonian Roadworthiness Analysis",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+
+  "remoteUser": "devuser",
+
+  "remoteEnv": {
+    "PYTHONPATH": "/workspace"
+  },
+
+  "forwardPorts": [8501, 8888],
+  "portsAttributes": {
+    "8501": {
+      "label": "Streamlit Dashboard",
+      "onAutoForward": "notify"
+    },
+    "8888": {
+      "label": "JupyterLab",
+      "onAutoForward": "notify"
+    }
+  },
+
+  "postCreateCommand": "echo '✅ Container ready! Run: streamlit run dashboard/app.py'",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-toolsai.jupyter",
+        "ms-toolsai.jupyter-renderers",
+        "charliermarsh.ruff",
+        "ms-python.black-formatter",
+        "eamodio.gitlens",
+        "mechatroner.rainbow-csv"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/bin/python",
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "jupyter.notebookFileRoot": "${workspaceFolder}",
+        "editor.formatOnSave": true,
+        "editor.rulers": [100],
+        "[python]": {
+          "editor.defaultFormatter": "ms-python.black-formatter"
+        }
+      }
+    }
+  }
+}

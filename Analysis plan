@@ -1,0 +1,316 @@
+# Analysis Plan — Technical Specification
+
+This file is the working spec for Claude Code inside VS Code.
+When asking Claude Code to implement something, reference the relevant section number.
+
+---
+
+## Part 1 — Data Pipeline
+
+### 1.1 Raw data structure
+
+Each yearly CSV (`data/raw/2010.csv` … `data/raw/2025.csv`) has these columns:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| TEHNOYLEVAATUSPUNKT | str | Inspection station full name |
+| PUNKTI_KOOD | str | Station code (2 letters, e.g. "HA", "MM") |
+| TOOTAJA | str | Inspector employee ID |
+| YV_KUUPAEV | str | Inspection year-month (YYYY-MM) |
+| YLEVAATUSLIIK | str | KORRALINE / KORDUV / EURO6 / RAHVUSVAHELINE |
+| YLEVAATUSOTSUS | str | KORRAS (pass) / KORDUVALE (fail) / VASTAB_NOUETELE |
+| RIKKED | str | Defects: "SEVERITY:ID,SEVERITY:ID" — VO=minor, OV=significant, EOV=dangerous |
+| SOIDUK_ID | int | Anonymised vehicle ID |
+| ESMANE_REG_AASTA | int | First registration year |
+| MARK | str | Vehicle make (e.g. VOLKSWAGEN) |
+| MUDEL | str | Vehicle model |
+| KATEGOORIA | str | Vehicle category (M1, N1, O1, L3e, …) |
+| KERETYYP | str | Body type (SEDAAN, UNIVERSAAL, KAUBIK, …) |
+
+The defect lookup table (`data/raw/rike.csv`) maps defect IDs to descriptions.
+Key columns: ID (int), NIMETUS (str, defect name in Estonian), TYYP (GRUPP/ALAMGRUPP/NIMETUS), VO/OV/EOV (Jah/Ei).
+
+### 1.2 Encoding issue
+
+Many strings are mojibake (UTF-8 read as Latin-1). Fix by encoding to latin-1 then decoding as utf-8:
+
+```python
+text.encode("latin-1").decode("utf-8")
+```
+
+Apply to: TEHNOYLEVAATUSPUNKT, TOOTAJA, MARK, MUDEL, KERETYYP, YLEVAATUSLIIK, YLEVAATUSOTSUS, RIKKED.
+
+### 1.3 Derived columns to create in data_cleaner.py
+
+- `SOURCE_YEAR` — integer year from filename
+- `YV_AASTA` — integer year from YV_KUUPAEV[:4]
+- `YV_KUU` — integer month from YV_KUUPAEV[5:7]
+- `VANUS` — vehicle age at inspection: YV_AASTA - ESMANE_REG_AASTA (clip to 0–100)
+- `RIKETE_ARV` — count of defects in RIKKED
+- `VO_ARV`, `OV_ARV`, `EOV_ARV` — count per severity level
+- `RIKE_IDS` — list of defect IDs extracted from RIKKED
+- `LABIS_ESIMESEL` — binary target: 1 if KORRALINE+KORRAS, 0 if KORRALINE+KORDUVALE, NA otherwise
+- `PUNKTI_RANGUS` — station fail rate %: computed per PUNKTI_KOOD over all KORRALINE inspections (min 50 inspections)
+- `ANDMED_PUUDULIKUD` — 1 if any of SOIDUK_ID, MARK, ESMANE_REG_AASTA is null
+
+---
+
+## Part 2 — Exploratory Analysis (notebooks/01_eda.ipynb)
+
+Implement each question as a clearly labelled notebook section with a chart and a 2–3 sentence interpretation.
+
+### Q1 — Vehicle types: pass vs fail per year
+
+**Goal:** For each KERETYYP and SOURCE_YEAR, compute pass rate among KORRALINE inspections.
+
+**Output:** Stacked bar or heatmap — rows = body types, columns = years, values = pass %.
+
+**Implementation:**
+```python
+q1 = df[df["YLEVAATUSLIIK"] == "KORRALINE"].groupby(
+    ["SOURCE_YEAR", "KERETYYP"]
+).agg(
+    pass_rate=("LABIS_ESIMESEL", "mean"),
+    count=("LABIS_ESIMESEL", "count")
+).reset_index()
+# Filter to body types with at least 200 inspections total across all years
+```
+
+### Q2 — Strictest inspector
+
+**Goal:** Find which TOOTAJA employee ID has the highest fail rate, and compute per-inspector pass probability.
+
+**Note:** TOOTAJA is an employee code, not a name (data is anonymised). Use the code as identifier.
+
+**Output:**
+- Bar chart: top 20 strictest inspectors (min 200 inspections, fail rate %)
+- Table: inspector | total inspections | pass count | fail count | pass probability
+
+**Implementation:**
+```python
+q2 = df[df["YLEVAATUSLIIK"] == "KORRALINE"].groupby("TOOTAJA").agg(
+    kokku=("LABIS_ESIMESEL", "count"),
+    labis=("LABIS_ESIMESEL", "sum")
+).reset_index()
+q2["kukkus"] = q2["kokku"] - q2["labis"]
+q2["pass_prob"] = q2["labis"] / q2["kokku"]
+q2 = q2[q2["kokku"] >= 200].sort_values("pass_prob")
+```
+
+### Q3 — Which stations attract which vehicle types
+
+**Goal:** Per PUNKTI_KOOD, find the most common KERETYYP. Show whether certain stations specialise.
+
+**Output:**
+- Heatmap: stations (rows) × body types (columns), cell = % of that station's traffic
+- Table: station name | dominant vehicle type | % of traffic
+
+**Implementation:**
+```python
+q3 = df.groupby(["PUNKTI_KOOD", "TEHNOYLEVAATUSPUNKT", "KERETYYP"]).size().reset_index(name="arv")
+q3_pct = q3.groupby("PUNKTI_KOOD").apply(
+    lambda x: x.assign(pct=x["arv"] / x["arv"].sum() * 100)
+).reset_index(drop=True)
+# Show top 20 stations by traffic volume
+```
+
+### Q4 — Vehicles with most similar failure patterns (top 10 defects)
+
+**Goal:** Find the 10 most common defect IDs across all inspections. Then for each vehicle MARK+KERETYYP combination, compute how often each of these top-10 defects appears. Use this as a feature vector to find which vehicle types have the most similar failure patterns.
+
+**Output:**
+- Table: top 10 defects with count and description (joined from rike.csv)
+- Heatmap: makes/body-types (rows) × top-10 defects (columns), values = defect frequency per 1000 inspections
+- Optional: dendrogram or similarity matrix showing which makes cluster together by defect pattern
+
+**Implementation:**
+```python
+# Explode the RIKE_IDS list column into individual rows
+exploded = df.explode("RIKE_IDS").dropna(subset=["RIKE_IDS"])
+exploded["RIKE_IDS"] = exploded["RIKE_IDS"].astype(int)
+
+# Top 10 defect IDs
+top10_ids = exploded["RIKE_IDS"].value_counts().head(10).index.tolist()
+
+# Join with rike.csv for descriptions
+rike = pd.read_csv("data/raw/rike.csv")
+top10_defects = rike[rike["ID"].astype(float).isin(top10_ids)][["ID", "NIMETUS"]]
+
+# Build feature matrix per MARK
+defect_matrix = exploded[exploded["RIKE_IDS"].isin(top10_ids)].groupby(
+    ["MARK", "RIKE_IDS"]
+).size().unstack(fill_value=0)
+```
+
+### Q5 — Oldest vehicle per month that passed/failed
+
+**Goal:** For each YV_KUUPAEV (year-month), find:
+- The oldest vehicle that **passed** (KORRAS) a KORRALINE inspection
+- The oldest vehicle that **failed** (KORDUVALE) a KORRALINE inspection
+
+**Output:** Table with columns: Month | Oldest Pass (Make, Model, Reg Year, Age, Body Type) | Oldest Fail (same fields)
+
+**Implementation:**
+```python
+regular = df[df["YLEVAATUSLIIK"] == "KORRALINE"].dropna(subset=["VANUS"])
+
+oldest_pass = regular[regular["YLEVAATUSOTSUS"] == "KORRAS"].loc[
+    regular[regular["YLEVAATUSOTSUS"] == "KORRAS"].groupby("YV_KUUPAEV")["VANUS"].idxmax()
+][["YV_KUUPAEV", "MARK", "MUDEL", "ESMANE_REG_AASTA", "VANUS", "KERETYYP"]]
+
+oldest_fail = regular[regular["YLEVAATUSOTSUS"] == "KORDUVALE"].loc[
+    regular[regular["YLEVAATUSOTSUS"] == "KORDUVALE"].groupby("YV_KUUPAEV")["VANUS"].idxmax()
+][["YV_KUUPAEV", "MARK", "MUDEL", "ESMANE_REG_AASTA", "VANUS", "KERETYYP"]]
+
+q5 = oldest_pass.merge(oldest_fail, on="YV_KUUPAEV", suffixes=("_LABIS", "_KUKKUS"))
+```
+
+---
+
+## Part 3 — Hypothesis Testing (notebooks/02_hypotheses.ipynb)
+
+Each hypothesis gets its own section with: the null hypothesis stated clearly, the test/chart, and a written conclusion.
+
+### H1 — Age effect on pass rate
+
+**Null hypothesis:** There is no significant difference in first-time pass rates between vehicles under and over 10 years old.
+
+**Test:**
+- Line chart: first-time pass rate (%) vs vehicle age (0–30 years), with a vertical line at 10 years
+- Chi-square test comparing pass rates for vehicles ≤10 years vs >10 years
+- Bonus: logistic regression curve showing probability of passing as a function of age
+
+### H2 — Brand reliability
+
+**Null hypothesis:** Premium brands (BMW, Mercedes-Benz, Audi, Volvo, Lexus) do not have higher pass rates than budget brands (Dacia, Chevrolet, Daewoo, Lada) when controlling for vehicle age.
+
+**Test:**
+- Bar chart: pass rate per brand (top 30 brands by volume), sorted
+- Age-controlled comparison: compute pass rate for 5–15 year old vehicles only (controlling for age), compare premium vs budget segment
+- Mann-Whitney U test for statistical significance
+
+**Premium brands:** BMW, MERCEDES-BENZ, AUDI, VOLVO, LEXUS, PORSCHE, JAGUAR, LAND ROVER
+**Budget brands:** DACIA, CHEVROLET, DAEWOO, LADA, SEAT, KIA, HYUNDAI (adjust based on actual data)
+
+### H3 — Station strictness vs volume
+
+**Null hypothesis:** There is no correlation between inspection station volume (number of inspections per year) and fail rate.
+
+**Test:**
+- Scatter plot: station volume (x) vs fail rate % (y), one dot per station, sized by volume
+- Pearson/Spearman correlation coefficient
+- Map visualisation if station location data is available (it likely isn't in this dataset, but check)
+
+---
+
+## Part 4 — Machine Learning
+
+### 4.1 Data preparation (src/feature_engineering.py)
+
+Filter to KORRALINE inspections only. Drop rows where LABIS_ESIMESEL is NA.
+
+**Features to create:**
+
+| Feature | Description | Method |
+|---------|-------------|--------|
+| VANUS | Vehicle age at inspection | YV_AASTA - ESMANE_REG_AASTA |
+| VANUS_RUUT | Age squared | Captures non-linear age effect |
+| ON_VANA | Binary: age > 10 | Hypothesis H1 threshold |
+| KUU_SIN, KUU_COS | Cyclic month encoding | sin/cos of month * 2π/12 |
+| MARK_SAGEDUS | How common the brand is | value_counts() on MARK |
+| MARK_LABIMISE_MAAR | Brand pass rate (smoothed) | Target encoding with smoothing factor 100 |
+| KERETYYP_KOOD | Body type as integer | Manual mapping dict |
+| PUNKTI_RANGUS | Station historical fail rate % | Pre-computed in cleaner |
+| EELMISED_YV | How many prior inspections this vehicle has had | cumcount() per SOIDUK_ID |
+| RIKETE_ARV | Total defects found (for repeat inspections) | From RIKKED parsing |
+
+**Normalisation:** Apply `StandardScaler` to all numerical features before clustering. For Random Forest, scaling is not required but apply it anyway for consistency.
+
+**Train/test split:** 80/20, stratified by LABIS_ESIMESEL, random_state=42.
+
+### 4.2 K-Means clustering (src/clustering.py)
+
+**Purpose:** Find natural groupings in the inspection data without using the pass/fail label. The goal is to discover profiles like "new SUVs at lenient stations" vs "old vans at strict stations."
+
+**Features for clustering:** VANUS, KERETYYP_KOOD, PUNKTI_RANGUS (scale all three with StandardScaler).
+
+**Process:**
+1. Run K-Means for k = 2 to 10
+2. Plot elbow curve (inertia) and silhouette scores
+3. Choose optimal k based on elbow + silhouette (likely k=4 or k=5)
+4. Re-run with chosen k, add KLASTER column to dataframe
+5. Profile each cluster: mean age, mean strictness, top 3 makes, pass rate
+
+**Expected cluster interpretations (to verify with data):**
+- Cluster A: Young vehicles, lenient stations — high pass rate
+- Cluster B: Old vehicles, strict stations — low pass rate
+- Cluster C: Commercial vehicles (N1/N2), any station
+- Cluster D: Motorcycles/special vehicles
+
+**Save:** `data/processed/clustered.csv`, `data/processed/cluster_profiles.json`, `data/processed/elbow_plot.png`
+
+### 4.3 Random Forest classifier (src/prediction.py)
+
+**Target:** LABIS_ESIMESEL (1 = passed first time, 0 = failed)
+
+**Model config:**
+```python
+RandomForestClassifier(
+    n_estimators=200,
+    max_depth=15,
+    min_samples_split=20,
+    min_samples_leaf=10,
+    random_state=42,
+    n_jobs=-1,
+    class_weight="balanced",
+)
+```
+
+**Evaluation metrics:** Accuracy, Precision, Recall, F1, ROC AUC. Generate confusion matrix and ROC curve plots. Save to `data/processed/`.
+
+**Feature importance:** Plot top features and save. Expected most important features: VANUS, MARK_LABIMISE_MAAR, PUNKTI_RANGUS.
+
+**Prediction interface:** The `predict_single()` function in prediction.py accepts keyword arguments matching feature names and returns a float (pass probability 0–1). This is called by the Streamlit dashboard.
+
+**Save:** `models/random_forest.pkl`, `models/model_metadata.json` (includes feature list and metrics).
+
+---
+
+## Part 5 — Streamlit Dashboard (dashboard/app.py)
+
+Five pages, accessible via sidebar radio:
+
+| Page | Content |
+|------|---------|
+| 📊 Ülevaade | Total inspections, pass rate, inspections per year, top makes, outcome pie chart |
+| 🔬 Hüpoteesid | Interactive charts for H1 (age), H2 (brands), H3 (stations) with filters |
+| 🔍 Uurivad küsimused | Q1–Q5 from exploratory analysis, each as an interactive chart/table |
+| 🤖 Ennustamine | Input form → Random Forest → gauge chart with pass probability |
+| 📦 Klastrid | Cluster scatter plot, cluster profiles table, cluster descriptions |
+
+**Key Streamlit patterns to follow:**
+- Use `@st.cache_data` for loading CSVs
+- Use `@st.cache_resource` for loading the model
+- All Plotly charts use `use_container_width=True`
+- Sidebar contains navigation + model metrics (when on prediction page)
+- Show a friendly error with pipeline instructions if processed data doesn't exist yet
+
+---
+
+## Part 6 — Working with Claude Code in VS Code
+
+When you open Claude Code in VS Code and want help with a specific part, use prompts like:
+
+**To implement a notebook section:**
+> "Read ANALYSIS_PLAN.md section Q2. Implement it in notebooks/01_eda.ipynb. The data is in data/processed/cleaned.csv. Use plotly for charts."
+
+**To fix a specific script:**
+> "Read src/data_cleaner.py and ANALYSIS_PLAN.md section 1.2–1.3. The encoding fix is not working for the MARK column. Debug and fix it."
+
+**To add a dashboard page:**
+> "Read ANALYSIS_PLAN.md Part 5 and dashboard/app.py. Add the '🔍 Uurivad küsimused' page with Q1 and Q2 charts. Data is in data/processed/cleaned.csv."
+
+**To run and test:**
+> "Run python src/data_cleaner.py and show me the output. If there are errors, fix them."
+
+Claude Code can read all files in the repo, run terminal commands, and edit files directly — so give it specific section references from this document.

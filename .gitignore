@@ -1,0 +1,39 @@
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Data files (large CSVs should not be in git)
+data/raw/*.csv
+data/processed/*.csv
+data/processed/*.parquet
+
+# Keep the data folders with README
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/raw/README.md
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Environment
+.env
