@@ -32,23 +32,15 @@ RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 \
 # Upgrade pip
 RUN python -m pip install --upgrade pip
 
-# Install all project dependencies
+# Install project runtime dependencies
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt
+
+# Install dev-only tools (not needed in production)
 RUN pip install \
-    duckdb \
-    pandas \
-    numpy \
-    scikit-learn \
-    matplotlib \
-    seaborn \
-    plotly \
-    streamlit \
-    requests \
     jupyterlab \
     ipykernel \
     ipywidgets \
-    openpyxl \
-    pyarrow \
-    scipy \
     black \
     ruff
 
