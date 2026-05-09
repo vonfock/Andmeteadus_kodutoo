@@ -23,13 +23,14 @@ PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 
 # --- Encoding fixes ---
 
+
 def fix_mojibake(text: str) -> str:
     """
     Fix mojibake encoding issues.
-    
+
     The data appears to be UTF-8 content that was misread as Latin-1,
     producing patterns like: TÃ¤hva → Tähva, Ãœlevaatus → Ülevaatus
-    
+
     Strategy: try to re-encode from latin-1 back to utf-8.
     """
     if not isinstance(text, str):
@@ -46,8 +47,14 @@ def fix_mojibake(text: str) -> str:
 def fix_encoding_in_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Apply mojibake fix to all string columns."""
     text_columns = [
-        "TEHNOYLEVAATUSPUNKT", "TOOTAJA", "MARK", "MUDEL",
-        "KERETYYP", "YLEVAATUSLIIK", "YLEVAATUSOTSUS", "RIKKED"
+        "TEHNOYLEVAATUSPUNKT",
+        "TOOTAJA",
+        "MARK",
+        "MUDEL",
+        "KERETYYP",
+        "YLEVAATUSLIIK",
+        "YLEVAATUSOTSUS",
+        "RIKKED",
     ]
     for col in text_columns:
         if col in df.columns:
@@ -56,6 +63,7 @@ def fix_encoding_in_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # --- Data type conversions ---
+
 
 def convert_types(df: pd.DataFrame) -> pd.DataFrame:
     """Convert columns to appropriate data types."""
@@ -77,6 +85,7 @@ def convert_types(df: pd.DataFrame) -> pd.DataFrame:
 
 # --- Vehicle age calculation ---
 
+
 def add_vehicle_age(df: pd.DataFrame) -> pd.DataFrame:
     """Calculate vehicle age at time of inspection."""
     if "YV_AASTA" in df.columns and "ESMANE_REG_AASTA" in df.columns:
@@ -89,16 +98,17 @@ def add_vehicle_age(df: pd.DataFrame) -> pd.DataFrame:
 
 # --- Defect (RIKKED) parsing ---
 
+
 def parse_rikked(rikked_str: str) -> list:
     """
     Parse the RIKKED column into a list of (severity, defect_id) tuples.
-    
+
     Input format examples:
         "VO:100101460"           → [("VO", 100101460)]
         "OV:100103882"           → [("OV", 100103882)]
         "VO:100101460,OV:100103882" → [("VO", 100101460), ("OV", 100103882)]
         ""  or NaN               → []
-    
+
     Severity levels:
         VO  = VäheOluline (minor)
         OV  = Oluline Viga (significant)
@@ -145,11 +155,12 @@ def expand_defects(df: pd.DataFrame) -> pd.DataFrame:
 
 # --- Target variable ---
 
+
 def add_target(df: pd.DataFrame) -> pd.DataFrame:
     """
     Create binary target variable for ML:
     LABIS_ESIMESEL = 1 if the vehicle passed on first regular inspection, 0 otherwise.
-    
+
     Only considers KORRALINE (regular) inspections.
     """
     # Filter: only regular inspections have a meaningful "first-time pass"
@@ -163,6 +174,7 @@ def add_target(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # --- Missing values ---
+
 
 def handle_missing_values(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -182,6 +194,7 @@ def handle_missing_values(df: pd.DataFrame) -> pd.DataFrame:
 
 # --- Station strictness index ---
 
+
 def add_station_strictness(df: pd.DataFrame) -> pd.DataFrame:
     """
     Calculate historical fail rate per inspection station.
@@ -191,10 +204,14 @@ def add_station_strictness(df: pd.DataFrame) -> pd.DataFrame:
     if len(regular) == 0:
         return df
 
-    station_stats = regular.groupby("PUNKTI_KOOD").agg(
-        kokku=("YLEVAATUSOTSUS", "count"),
-        kukkus_labi=("YLEVAATUSOTSUS", lambda x: (x == "KORDUVALE").sum())
-    ).reset_index()
+    station_stats = (
+        regular.groupby("PUNKTI_KOOD")
+        .agg(
+            kokku=("YLEVAATUSOTSUS", "count"),
+            kukkus_labi=("YLEVAATUSOTSUS", lambda x: (x == "KORDUVALE").sum()),
+        )
+        .reset_index()
+    )
 
     station_stats["PUNKTI_RANGUS"] = (
         station_stats["kukkus_labi"] / station_stats["kokku"] * 100
@@ -204,15 +221,14 @@ def add_station_strictness(df: pd.DataFrame) -> pd.DataFrame:
     station_stats = station_stats[station_stats["kokku"] >= 50]
 
     df = df.merge(
-        station_stats[["PUNKTI_KOOD", "PUNKTI_RANGUS"]],
-        on="PUNKTI_KOOD",
-        how="left"
+        station_stats[["PUNKTI_KOOD", "PUNKTI_RANGUS"]], on="PUNKTI_KOOD", how="left"
     )
 
     return df
 
 
 # --- Main pipeline ---
+
 
 def load_rike_table() -> pd.DataFrame:
     """Load the defect codes lookup table."""
@@ -233,7 +249,7 @@ def load_rike_table() -> pd.DataFrame:
 def clean_data(input_path: Path = None) -> pd.DataFrame:
     """
     Run the full cleaning pipeline.
-    
+
     Returns cleaned DataFrame and saves to data/processed/cleaned.csv
     """
     if input_path is None:

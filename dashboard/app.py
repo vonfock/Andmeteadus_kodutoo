@@ -4,13 +4,11 @@ Run with: streamlit run dashboard/app.py
 """
 
 import sys
-import math
 from pathlib import Path
 
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
-import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.data_loader import (
@@ -26,9 +24,6 @@ from src.data_loader import (
     q_top_defects,
     q_defects_by_mark_model_year,
     q_defects_summary_by_mark,
-    rike_df,
-    rike_metadata_df,
-    yv_metadata,
 )
 
 # ── Page config ────────────────────────────────────────────────────────────────
@@ -83,17 +78,15 @@ st.sidebar.caption(f"Andmed: {min(AVAILABLE_YEARS)}–{max(AVAILABLE_YEARS)}")
 st.sidebar.caption("Allikas: andmed.eesti.ee / Transpordiamet")
 
 
-def year_selector(key: str, default: list = None) -> list:
-    if default is None:
-        default = [AVAILABLE_YEARS[-1]]
+def year_selector(key: str) -> list:
     selected = st.multiselect(
         "Vali aastad:",
         options=AVAILABLE_YEARS,
-        default=default,
+        default=[],
         key=key,
     )
     if not selected:
-        st.warning("Vali vähemalt üks aasta.")
+        st.info("Vali vähemalt üks aasta, et päring käivitada.")
         st.stop()
     return selected
 
@@ -102,12 +95,13 @@ def year_selector(key: str, default: list = None) -> list:
 # PAGE 1 — Most popular mark
 # ══════════════════════════════════════════════════════════════════════════════
 if page == "🏆 Populaarseim mark":
-    st.title("🏆 Populaarseim automärk tehnoülevaatustel")
+    st.title("🏆 Populaarseim automark tehnoülevaatustel")
     st.write(
-        "Kõige sagedamini tehnoülevaatusele tulnud automärk ja selle top 5 mudelit valitud aastatel."
+        "Top 3 sagedamini tehnoülevaatusele tulnud automerki ja nende top 5 mudelit — "
+        "kõik valitud aastad kokku liidetuna."
     )
 
-    years = year_selector("mark_years", default=AVAILABLE_YEARS)
+    years = year_selector("mark_years")
 
     with st.spinner("Pärin andmeid..."):
         mark_df, models_df = q_top_mark_and_models(years)
@@ -118,30 +112,27 @@ if page == "🏆 Populaarseim mark":
 
     fig = px.bar(
         mark_df,
-        x="aasta",
+        x="MARK",
         y="arv",
         color="MARK",
-        text="MARK",
-        title="Populaarseim märk aasta kaupa",
-        labels={"aasta": "Aasta", "arv": "Ülevaatuste arv", "MARK": "Märk"},
+        text="arv",
+        title="Top 3 populaarsemat automerki (kokku valitud aastate peale)",
+        labels={"MARK": "Mark", "arv": "Ülevaatuste arv"},
     )
-    fig.update_traces(textposition="outside")
-    fig.update_layout(showlegend=False, xaxis=dict(tickmode="linear"))
+    fig.update_traces(texttemplate="%{text:,}", textposition="outside")
+    fig.update_layout(showlegend=False, yaxis_title="Ülevaatuste arv")
     st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Top 5 mudelit — populaarseima märgi hulgas")
-    for year in sorted(years):
-        year_mark = mark_df[mark_df["aasta"] == year]
-        if year_mark.empty:
-            continue
-        winner = year_mark.iloc[0]["MARK"]
-        year_models = models_df[models_df["aasta"] == year]
-        with st.expander(f"{year} — {winner}"):
-            if year_models.empty:
+    st.subheader("Top 5 mudelit iga populaarse automargi hulgas")
+    for _, row in mark_df.iterrows():
+        mark = row["MARK"]
+        mark_models = models_df[models_df["MARK"] == mark]
+        with st.expander(f"{mark} — {int(row['arv']):,} ülevaatust"):
+            if mark_models.empty:
                 st.write("Mudelite andmed puuduvad.")
             else:
                 fig2 = px.bar(
-                    year_models,
+                    mark_models.sort_values("arv"),
                     x="arv",
                     y="MUDEL",
                     orientation="h",
@@ -162,9 +153,9 @@ if page == "🏆 Populaarseim mark":
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "👤 Inspektorite rangus":
     st.title("👤 Inspektorite ja ülevaatuspunktide rangus")
-    st.write("Läbimise % = KORRAS / (KORRAS + KORDUVALE) KORRALINE ülevaatustel.")
+    st.write("Läbimise % = KORRAS / (KORRAS + KORDUVALE) * KORRALINE ülevaatus.")
 
-    years = year_selector("inspector_years", default=AVAILABLE_YEARS)
+    years = year_selector("inspector_years")
     tab1, tab2 = st.tabs(["🏢 Ülevaatuspunktid", "🧑 Inspektorid"])
 
     with tab1:
@@ -210,7 +201,13 @@ elif page == "👤 Inspektorite rangus":
             fig.update_layout(
                 coloraxis_showscale=False,
                 height=max(400, top_n_s * 35),
-                yaxis={"categoryorder": "total ascending"},
+                yaxis={
+                    "categoryorder": (
+                        "total descending"
+                        if "Rangeimad" in mode_s
+                        else "total ascending"
+                    )
+                },
             )
             st.plotly_chart(fig, use_container_width=True)
             with st.expander("📋 Kõik punktid tabelina"):
@@ -231,78 +228,107 @@ elif page == "👤 Inspektorite rangus":
 
     with tab2:
         st.subheader("Inspektorite läbimise määr")
-        st.caption("Miinimum 50 ülevaatust inspektori kohta. 20 inspektorit lehel.")
+        st.caption("Miinimum 50 ülevaatust inspektori kohta.")
         with st.spinner("Pärin inspektorite andmeid..."):
             insp_df = q_inspector_strictness(years)
         if insp_df.empty:
             st.error("Andmeid ei leitud.")
         else:
-            mode_i = st.radio(
-                "Sorteeri:",
-                ["🔴 Rangeimad ees", "🟢 Leebemad ees"],
-                horizontal=True,
-                key="insp_mode",
-            )
             all_stations = sorted(insp_df["jaam"].dropna().unique().tolist())
             sel_station = st.selectbox(
                 "Filtreeri punkti järgi:",
                 ["Kõik punktid"] + all_stations,
                 key="insp_station",
             )
-            if sel_station != "Kõik punktid":
-                insp_df = insp_df[insp_df["jaam"] == sel_station]
+            filtered_insp = (
+                insp_df[insp_df["jaam"] == sel_station].copy()
+                if sel_station != "Kõik punktid"
+                else insp_df.copy()
+            )
 
-            ascending = "Rangeimad" in mode_i
-            insp_sorted = insp_df.sort_values(
-                "labimise_protsent", ascending=ascending
-            ).reset_index(drop=True)
-            PAGE_SIZE = 20
-            total_pages = max(1, math.ceil(len(insp_sorted) / PAGE_SIZE))
-            _, col_mid, _ = st.columns([1, 2, 1])
-            with col_mid:
-                current_page = st.number_input(
-                    f"Leht (1–{total_pages})",
-                    min_value=1,
-                    max_value=total_pages,
-                    value=1,
-                    step=1,
-                    key="insp_page",
+            TOP_N = 10
+            toughest = filtered_insp.nsmallest(TOP_N, "labimise_protsent").sort_values(
+                "labimise_protsent"
+            )
+            easiest = filtered_insp.nlargest(TOP_N, "labimise_protsent").sort_values(
+                "labimise_protsent", ascending=False
+            )
+            # Force x-axis to treat codes as categories in the sorted order
+            toughest["kood_str"] = toughest["inspektori_kood"].astype(str)
+            easiest["kood_str"] = easiest["inspektori_kood"].astype(str)
+
+            col_l, col_r = st.columns(2)
+            with col_l:
+                fig_t = px.bar(
+                    toughest,
+                    x="kood_str",
+                    y="labimise_protsent",
+                    color="labimise_protsent",
+                    color_continuous_scale="Reds_r",
+                    text="labimise_protsent",
+                    title="Top 10 rangeimad inspektorid",
+                    hover_data=["jaam", "kokku", "labis_esimesel", "kukkus_esimesel"],
+                    labels={
+                        "kood_str": "Inspektori kood",
+                        "labimise_protsent": "Läbimise %",
+                    },
+                    category_orders={"kood_str": toughest["kood_str"].tolist()},
                 )
-            start = (current_page - 1) * PAGE_SIZE
-            page_df = insp_sorted.iloc[start : start + PAGE_SIZE]
-            cscale = "Reds_r" if ascending else "Greens"
-            fig = px.bar(
-                page_df.sort_values("labimise_protsent"),
-                x="labimise_protsent",
-                y="inspektori_kood",
-                orientation="h",
-                color="labimise_protsent",
-                color_continuous_scale=cscale,
-                hover_data=["jaam", "kokku", "labis_esimesel", "kukkus_esimesel"],
-                text="labimise_protsent",
-                title=f"Inspektorid — leht {current_page}/{total_pages} "
-                f"({len(insp_sorted)} inspektorit kokku)",
-                labels={
-                    "labimise_protsent": "Läbimise %",
-                    "inspektori_kood": "Inspektori kood",
-                },
-            )
-            fig.update_traces(texttemplate="%{text}%", textposition="outside")
-            fig.update_layout(
-                coloraxis_showscale=False,
-                height=max(500, len(page_df) * 30),
-                yaxis={"categoryorder": "total ascending"},
-                xaxis_range=[0, 105],
-            )
-            st.plotly_chart(fig, use_container_width=True)
+                fig_t.update_traces(texttemplate="%{text}%", textposition="outside")
+                fig_t.update_layout(
+                    coloraxis_showscale=False,
+                    yaxis_range=[0, 105],
+                )
+                st.plotly_chart(fig_t, use_container_width=True)
+
+            with col_r:
+                fig_e = px.bar(
+                    easiest,
+                    x="kood_str",
+                    y="labimise_protsent",
+                    color="labimise_protsent",
+                    color_continuous_scale="Greens",
+                    text="labimise_protsent",
+                    title="Top 10 leebemad inspektorid",
+                    hover_data=["jaam", "kokku", "labis_esimesel", "kukkus_esimesel"],
+                    labels={
+                        "kood_str": "Inspektori kood",
+                        "labimise_protsent": "Läbimise %",
+                    },
+                    category_orders={"kood_str": easiest["kood_str"].tolist()},
+                )
+                fig_e.update_traces(texttemplate="%{text}%", textposition="outside")
+                fig_e.update_layout(
+                    coloraxis_showscale=False,
+                    yaxis_range=[0, 105],
+                )
+                st.plotly_chart(fig_e, use_container_width=True)
 
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Inspektoreid kokku", len(insp_sorted))
+            c1.metric("Inspektoreid kokku", len(filtered_insp))
             c2.metric(
-                "Keskmine läbimise %", f"{insp_sorted['labimise_protsent'].mean():.1f}%"
+                "Keskmine läbimise %",
+                f"{filtered_insp['labimise_protsent'].mean():.1f}%",
             )
-            c3.metric("Madalaim %", f"{insp_sorted['labimise_protsent'].min()}%")
-            c4.metric("Kõrgeim %", f"{insp_sorted['labimise_protsent'].max()}%")
+            c3.metric("Madalaim %", f"{filtered_insp['labimise_protsent'].min()}%")
+            c4.metric("Kõrgeim %", f"{filtered_insp['labimise_protsent'].max()}%")
+
+            with st.expander("📋 Kõik inspektorid tabelina"):
+                st.dataframe(
+                    filtered_insp.sort_values("labimise_protsent").rename(
+                        columns={
+                            "inspektori_kood": "Inspektori kood",
+                            "jaam": "Punkt",
+                            "jaama_kood": "Jaama kood",
+                            "kokku": "Kokku",
+                            "labis_esimesel": "Läbis",
+                            "kukkus_esimesel": "Kukkus",
+                            "labimise_protsent": "Läbimise %",
+                        }
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -315,8 +341,14 @@ elif page == "🧓 Vanim auto kuus":
     )
 
     year = st.selectbox(
-        "Vali aasta:", options=AVAILABLE_YEARS, index=len(AVAILABLE_YEARS) - 1
+        "Vali aasta:",
+        options=[None] + AVAILABLE_YEARS,
+        index=0,
+        format_func=lambda x: "— vali aasta —" if x is None else str(x),
     )
+    if year is None:
+        st.info("Vali aasta, et päring käivitada.")
+        st.stop()
     with st.spinner(f"Pärin {year} andmeid..."):
         df = q_oldest_car_per_month(year)
     if df.empty:
@@ -369,7 +401,7 @@ elif page == "📈 Vanuse mõju läbimisele":
     )
     st.caption("KORRALINE ülevaatused. Läbimise % = KORRAS / (KORRAS + KORDUVALE).")
 
-    years = year_selector("age_years", default=AVAILABLE_YEARS)
+    years = year_selector("age_years")
     with st.spinner("Arvutan..."):
         df = q_age_effect(years)
     if df.empty:
@@ -403,7 +435,8 @@ elif page == "📈 Vanuse mõju läbimisele":
         title="Trend",
         labels={"vanusegrupp": "Vanusegrupp", "labimise_protsent": "Läbimise %"},
     )
-    fig2.update_layout(yaxis_range=[0, 105])
+    y_min = max(0, df["labimise_protsent"].min() - 5)
+    fig2.update_layout(yaxis_range=[y_min, 100])
     st.plotly_chart(fig2, use_container_width=True)
 
     st.dataframe(
@@ -443,7 +476,7 @@ elif page == "🔧 Rikete analüüs":
         "VO = väheoluline, OV = oluline viga, EOV = eriti ohtlik."
     )
 
-    years = year_selector("defects_years", default=[AVAILABLE_YEARS[-1]])
+    years = year_selector("defects_years")
 
     # ── Overview metrics ──────────────────────────────────────────────────────
     with st.spinner("Laen rikete ülevaate..."):
@@ -496,7 +529,10 @@ elif page == "🔧 Rikete analüüs":
     if top_df.empty:
         st.warning("Rikete andmeid ei leitud.")
     else:
-        top_df["label"] = top_df["raskusaste"] + ":" + top_df["rike_id"]
+        if "nimetus" in top_df.columns and top_df["nimetus"].any():
+            top_df["label"] = top_df["raskusaste"] + ": " + top_df["nimetus"]
+        else:
+            top_df["label"] = top_df["raskusaste"] + ":" + top_df["rike_id"]
         fig_top = px.bar(
             top_df.sort_values("esinemisi"),
             x="esinemisi",
@@ -516,10 +552,6 @@ elif page == "🔧 Rikete analüüs":
             yaxis={"categoryorder": "total ascending"}, height=max(400, top_n * 30)
         )
         st.plotly_chart(fig_top, use_container_width=True)
-        st.caption(
-            "💡 Rikke ID tähenduse leidmiseks otsi ID numbreid failist rike.csv "
-            "(veerg ID → NIMETUS)."
-        )
 
     st.divider()
 
@@ -547,20 +579,19 @@ elif page == "🔧 Rikete analüüs":
         )
     with col3:
         year_filter = st.number_input(
-            "Väljalaskeaasta (valikuline):",
-            min_value=1900,
+            "Väljalaskeaasta (valikuline, 0 = kõik):",
+            min_value=0,
             max_value=2025,
             value=0,
             step=1,
             key="defect_year",
         )
-        reg_aasta_filter = int(year_filter) if year_filter > 1900 else None
+        reg_aasta_filter = int(year_filter) if year_filter > 0 else None
 
     if top_df.empty:
         st.info("Rikete andmed puuduvad.")
     else:
         top_ids = top_df["rike_id"].tolist()
-
         with st.spinner("Pärin rikke detaile..."):
             detail_df = q_defects_by_mark_model_year(
                 years,
@@ -573,54 +604,15 @@ elif page == "🔧 Rikete analüüs":
         if detail_df.empty:
             st.warning("Valitud filtritega andmeid ei leitud.")
         else:
-            detail_df["label"] = detail_df["raskusaste"] + ":" + detail_df["rike_id"]
-
-            # Heatmap: mark vs defect ID
-            pivot = (
-                detail_df.groupby(["MARK", "label"])["esinemisi"].sum().reset_index()
-            )
-            if len(pivot["MARK"].unique()) > 1:
-                pivot_wide = pivot.pivot(
-                    index="MARK", columns="label", values="esinemisi"
-                ).fillna(0)
-                fig_heat = px.imshow(
-                    pivot_wide,
-                    title="Rikete esinemine märkide kaupa (heatmap)",
-                    labels={"x": "Rike (tase:ID)", "y": "Märk", "color": "Esinemisi"},
-                    color_continuous_scale="YlOrRd",
-                    aspect="auto",
+            if "nimetus" in detail_df.columns and detail_df["nimetus"].any():
+                detail_df["label"] = (
+                    detail_df["raskusaste"] + ": " + detail_df["nimetus"]
                 )
-                fig_heat.update_layout(height=max(300, len(pivot_wide) * 25))
-                st.plotly_chart(fig_heat, use_container_width=True)
+            else:
+                detail_df["label"] = (
+                    detail_df["raskusaste"] + ":" + detail_df["rike_id"]
+                )
 
-            # Bar chart: top defects for filtered selection
-            top_detail = (
-                detail_df.groupby(["label", "raskusaste"])["esinemisi"]
-                .sum()
-                .reset_index()
-            )
-            top_detail = top_detail.sort_values("esinemisi", ascending=True)
-            fig_detail = px.bar(
-                top_detail,
-                x="esinemisi",
-                y="label",
-                orientation="h",
-                color="raskusaste",
-                color_discrete_map=SEVERITY_COLORS,
-                title="Rikete sagedus (filtri põhjal)",
-                labels={
-                    "esinemisi": "Esinemisi",
-                    "label": "Rike",
-                    "raskusaste": "Raskusaste",
-                },
-            )
-            fig_detail.update_layout(
-                yaxis={"categoryorder": "total ascending"},
-                height=max(400, len(top_detail) * 30),
-            )
-            st.plotly_chart(fig_detail, use_container_width=True)
-
-            # Detailed table
             with st.expander("📋 Detailne tabel"):
                 st.dataframe(
                     detail_df.rename(
@@ -672,7 +664,7 @@ elif page == "🔍 Otsi margi järgi":
     st.write("Sisesta automärk ja vaata läbimise tõenäosust eri vanusegruppides.")
     st.caption("Läbimise % = KORRAS / (KORRAS + KORDUVALE) KORRALINE ülevaatustel.")
 
-    years = year_selector("search_years", default=AVAILABLE_YEARS)
+    years = year_selector("search_years")
 
     mark_input = (
         st.text_input(

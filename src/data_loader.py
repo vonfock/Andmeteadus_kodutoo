@@ -12,24 +12,37 @@ from pathlib import Path
 
 import duckdb
 import pandas as pd
+import streamlit as st
+
+# ── Encoding fix (mirrors data_cleaner.fix_mojibake) ─────────────────────────
+
+
+def _fix_encoding(text: str) -> str:
+    if not isinstance(text, str):
+        return text
+    try:
+        return text.encode("latin-1").decode("utf-8")
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        return text
+
 
 YEAR_URLS = {
     2010: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/9b2d3dbe-e35c-4b5f-baed-6990baa408d0/download-s3",
-    # 2011: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/5139abc3-6823-4121-8d2c-0c82928ac8ac/download-s3",
-    # 2012: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/53f52202-e94e-4cb8-9149-4e311e6f2fdb/download-s3",
-    # 2013: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/3f859ecc-7296-4b9c-ae9b-625b95c90ad9/download-s3",
-    # 2014: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/10103f5a-0b6d-46fc-bd16-99a5c433625e/download-s3",
-    # 2015: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/788a9115-a5da-4f47-bbcc-c1c3b644d3b3/download-s3",
-    # 2016: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/f4f0b51e-8343-4832-9c07-4c04448b8f21/download-s3",
-    # 2017: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/b5a08ea9-0fa8-4cb5-b0bc-7109571d8de4/download-s3",
-    # 2018: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/2d018cd8-f3d7-4242-8514-99633120992a/download-s3",
-    # 2019: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/7ba50767-9844-40bb-8561-af89b634e201/download-s3",
-    # 2020: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/6371e8dc-9906-4555-af9f-f927f2ccf938/download-s3",
-    # 2021: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/f3fe9ef1-897c-45b3-b2dd-908b810aae9c/download-s3",
-    # 2022: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/ba317d52-71b7-473d-bc87-aec0cde38434/download-s3",
-    # 2023: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/1943aed4-8e53-4e70-9946-7fc8ad1f7dfe/download-s3",
-    # 2024: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/af5b081a-3db1-495d-90f3-c334a860938a/download-s3",
-    # 2025 to be added
+    2011: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/5139abc3-6823-4121-8d2c-0c82928ac8ac/download-s3",
+    2012: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/53f52202-e94e-4cb8-9149-4e311e6f2fdb/download-s3",
+    2013: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/3f859ecc-7296-4b9c-ae9b-625b95c90ad9/download-s3",
+    2014: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/10103f5a-0b6d-46fc-bd16-99a5c433625e/download-s3",
+    2015: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/788a9115-a5da-4f47-bbcc-c1c3b644d3b3/download-s3",
+    2016: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/f4f0b51e-8343-4832-9c07-4c04448b8f21/download-s3",
+    2017: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/b5a08ea9-0fa8-4cb5-b0bc-7109571d8de4/download-s3",
+    2018: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/2d018cd8-f3d7-4242-8514-99633120992a/download-s3",
+    2019: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/7ba50767-9844-40bb-8561-af89b634e201/download-s3",
+    2020: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/6371e8dc-9906-4555-af9f-f927f2ccf938/download-s3",
+    2021: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/f3fe9ef1-897c-45b3-b2dd-908b810aae9c/download-s3",
+    2022: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/ba317d52-71b7-473d-bc87-aec0cde38434/download-s3",
+    2023: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/1943aed4-8e53-4e70-9946-7fc8ad1f7dfe/download-s3",
+    2024: "https://andmed.eesti.ee/api/datasets/ae47fec7-63d0-4b7a-969b-fbdfed21d52a/files/af5b081a-3db1-495d-90f3-c334a860938a/download-s3",
+    2025: "https://pilv.transpordiamet.ee/s/Iiee4OAYFq4lT1v/download?path=%2F&files=yv_2025.csv",
 }
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -70,10 +83,18 @@ def _safe_read_json(path: Path) -> dict:
 # ── Metadata / lookup tables ─────────────────────────────────────────────────
 
 rike_df = _safe_read_csv(RIKE_PATH)
+if not rike_df.empty and "NIMETUS" in rike_df.columns:
+    rike_df["NIMETUS"] = rike_df["NIMETUS"].apply(_fix_encoding)
 
 rike_metadata_df = _safe_read_csv(RIKE_METADATA_PATH)
 
 yv_metadata = _safe_read_json(YV_METADATA_PATH)
+
+# Pre-build rike ID → name lookup (TYYP=NIMETUS rows, keyed by string ID)
+_RIKE_LOOKUP: dict = {}
+if not rike_df.empty and {"ID", "NIMETUS", "TYYP"}.issubset(rike_df.columns):
+    _nimetus = rike_df[rike_df["TYYP"] == "NIMETUS"][["ID", "NIMETUS"]].dropna()
+    _RIKE_LOOKUP = dict(zip(_nimetus["ID"].astype(str), _nimetus["NIMETUS"]))
 
 
 def get_available_years() -> list:
@@ -92,58 +113,43 @@ def _urls_list(years: list) -> str:
     return f"[{quoted}]"
 
 
-# ── Q1: Most popular mark per year + top 5 models ────────────────────────────
+# ── Q1: Top 3 marks + top 5 models each — summed across selected years ────────
 
 
+@st.cache_data(show_spinner=False)
 def q_top_mark_and_models(years: list) -> tuple:
     urls = _urls_list(years)
     mark_df = duckdb.sql(f"""
-        WITH ranked AS (
-            SELECT
-                CAST(SUBSTR(YV_KUUPAEV, 1, 4) AS INTEGER) AS aasta,
-                MARK, COUNT(*) AS arv,
-                ROW_NUMBER() OVER (
-                    PARTITION BY CAST(SUBSTR(YV_KUUPAEV, 1, 4) AS INTEGER)
-                    ORDER BY COUNT(*) DESC
-                ) AS rnk
-            FROM read_csv_auto({urls}, delim=',', header=true, encoding='utf-8')
-            WHERE MARK IS NOT NULL AND MARK != ''
-            GROUP BY aasta, MARK
-        )
-        SELECT aasta, MARK, arv FROM ranked WHERE rnk = 1 ORDER BY aasta
+        SELECT MARK, COUNT(*) AS arv
+        FROM read_csv_auto({urls}, delim=',', header=true, encoding='utf-8')
+        WHERE MARK IS NOT NULL AND MARK != ''
+        GROUP BY MARK
+        ORDER BY arv DESC
+        LIMIT 3
     """).df()
 
     models_df = duckdb.sql(f"""
-        WITH mark_counts AS (
-            SELECT
-                CAST(SUBSTR(YV_KUUPAEV, 1, 4) AS INTEGER) AS aasta,
-                MARK, COUNT(*) AS arv,
-                ROW_NUMBER() OVER (
-                    PARTITION BY CAST(SUBSTR(YV_KUUPAEV, 1, 4) AS INTEGER)
-                    ORDER BY COUNT(*) DESC
-                ) AS rnk
+        WITH top_marks AS (
+            SELECT MARK
             FROM read_csv_auto({urls}, delim=',', header=true, encoding='utf-8')
             WHERE MARK IS NOT NULL AND MARK != ''
-            GROUP BY aasta, MARK
+            GROUP BY MARK
+            ORDER BY COUNT(*) DESC
+            LIMIT 3
         ),
-        top_marks AS (SELECT aasta, MARK FROM mark_counts WHERE rnk = 1),
         model_counts AS (
-            SELECT
-                CAST(SUBSTR(d.YV_KUUPAEV, 1, 4) AS INTEGER) AS aasta,
-                d.MARK, d.MUDEL, COUNT(*) AS arv,
-                ROW_NUMBER() OVER (
-                    PARTITION BY CAST(SUBSTR(d.YV_KUUPAEV, 1, 4) AS INTEGER)
-                    ORDER BY COUNT(*) DESC
-                ) AS rnk
+            SELECT d.MARK, d.MUDEL, COUNT(*) AS arv
             FROM read_csv_auto({urls}, delim=',', header=true, encoding='utf-8') d
-            INNER JOIN top_marks t
-                ON CAST(SUBSTR(d.YV_KUUPAEV, 1, 4) AS INTEGER) = t.aasta
-               AND d.MARK = t.MARK
+            INNER JOIN top_marks t ON d.MARK = t.MARK
             WHERE d.MUDEL IS NOT NULL AND d.MUDEL != ''
-            GROUP BY aasta, d.MARK, d.MUDEL
+            GROUP BY d.MARK, d.MUDEL
+        ),
+        ranked AS (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY MARK ORDER BY arv DESC) AS rnk
+            FROM model_counts
         )
-        SELECT aasta, MARK, MUDEL, arv FROM model_counts
-        WHERE rnk <= 5 ORDER BY aasta, rnk
+        SELECT MARK, MUDEL, arv FROM ranked
+        WHERE rnk <= 5 ORDER BY MARK, rnk
     """).df()
 
     return mark_df, models_df
@@ -152,6 +158,7 @@ def q_top_mark_and_models(years: list) -> tuple:
 # ── Q2a: Station strictness ───────────────────────────────────────────────────
 
 
+@st.cache_data(show_spinner=False)
 def q_station_strictness(years: list) -> pd.DataFrame:
     urls = _urls_list(years)
     return duckdb.sql(f"""
@@ -177,6 +184,7 @@ def q_station_strictness(years: list) -> pd.DataFrame:
 # ── Q2b: Inspector strictness (paginated in app) ──────────────────────────────
 
 
+@st.cache_data(show_spinner=False)
 def q_inspector_strictness(years: list) -> pd.DataFrame:
     urls = _urls_list(years)
     return duckdb.sql(f"""
@@ -203,6 +211,7 @@ def q_inspector_strictness(years: list) -> pd.DataFrame:
 # ── Q3: Oldest car per month ──────────────────────────────────────────────────
 
 
+@st.cache_data(show_spinner=False)
 def q_oldest_car_per_month(year: int) -> pd.DataFrame:
     url = get_url(year)
     return duckdb.sql(f"""
@@ -231,6 +240,7 @@ def q_oldest_car_per_month(year: int) -> pd.DataFrame:
 # ── Q4: Age effect on pass rate ───────────────────────────────────────────────
 
 
+@st.cache_data(show_spinner=False)
 def q_age_effect(years: list) -> pd.DataFrame:
     urls = _urls_list(years)
     return duckdb.sql(f"""
@@ -284,6 +294,7 @@ def q_age_effect(years: list) -> pd.DataFrame:
 # ── Q5: Mark pass rate by age group ──────────────────────────────────────────
 
 
+@st.cache_data(show_spinner=False)
 def q_mark_pass_by_age(years: list, mark: str) -> pd.DataFrame:
     urls = _urls_list(years)
     mark_upper = mark.strip().upper()
@@ -336,6 +347,7 @@ def q_mark_pass_by_age(years: list, mark: str) -> pd.DataFrame:
     """).df()
 
 
+@st.cache_data(show_spinner=False)
 def q_available_marks(years: list) -> list:
     urls = _urls_list(years)
     df = duckdb.sql(f"""
@@ -354,6 +366,7 @@ def q_available_marks(years: list) -> list:
 # We extract the severity prefix (before ':') and defect ID (after ':').
 
 
+@st.cache_data(show_spinner=False)
 def q_defect_overview(years: list) -> pd.DataFrame:
     """
     Overview of defect counts by severity level (VO / OV / EOV) per year.
@@ -377,17 +390,16 @@ def q_defect_overview(years: list) -> pd.DataFrame:
     """).df()
 
 
+@st.cache_data(show_spinner=False)
 def q_top_defects(years: list, top_n: int = 15) -> pd.DataFrame:
     """
     Top N most common defect IDs across all inspections in selected years.
-    Returns: defect_id, severity, count, mark_example
-    The defect ID can be joined against rike.csv for descriptions.
+    Returns: rike_id, raskusaste, esinemisi, nimetus (defect name from rike.csv)
     """
     urls = _urls_list(years)
-    return duckdb.sql(f"""
+    df = duckdb.sql(f"""
         WITH exploded AS (
             SELECT
-                -- Split RIKKED by comma, then each token by ':'
                 TRIM(entry)                                             AS entry,
                 TRIM(SPLIT_PART(TRIM(entry), ':', 1))                  AS tase,
                 TRIM(SPLIT_PART(TRIM(entry), ':', 2))                  AS rike_id
@@ -411,8 +423,11 @@ def q_top_defects(years: list, top_n: int = 15) -> pd.DataFrame:
         ORDER BY esinemisi DESC
         LIMIT {top_n}
     """).df()
+    df["nimetus"] = df["rike_id"].map(_RIKE_LOOKUP).fillna("")
+    return df
 
 
+@st.cache_data(show_spinner=False)
 def q_defects_by_mark_model_year(
     years: list,
     top_defect_ids: list,
@@ -478,8 +493,11 @@ def q_defects_by_mark_model_year(
         GROUP BY MARK, MUDEL, reg_aasta, rike_id, raskusaste
         ORDER BY esinemisi DESC
     """).df()
+    df["nimetus"] = df["rike_id"].map(_RIKE_LOOKUP).fillna("")
+    return df
 
 
+@st.cache_data(show_spinner=False)
 def q_defects_summary_by_mark(years: list, top_n: int = 20) -> pd.DataFrame:
     """
     Top N car marks ranked by total number of defects found (all severities).
