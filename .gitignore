@@ -19,6 +19,8 @@ data/processed/*.parquet
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/raw/README.md
+# Defect code reference table — small, needed for dashboard
+!data/raw/rike.csv
 
 # Jupyter
 .ipynb_checkpoints/
