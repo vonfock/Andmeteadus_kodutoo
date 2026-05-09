@@ -7,6 +7,26 @@ import sys
 from pathlib import Path
 
 import streamlit as st
+
+
+def check_password():
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+
+    if not st.session_state.authenticated:
+        st.title("🔒 Tehnoülevaatuste analüüs")
+        password = st.text_input("Sisesta parool:", type="password")
+        if st.button("Sisene"):
+            if password == st.secrets["APP_PASSWORD"]:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("Vale parool.")
+        st.stop()
+
+
+check_password()
+
 import plotly.express as px
 import plotly.graph_objects as go
 
