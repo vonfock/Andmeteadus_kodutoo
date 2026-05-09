@@ -297,7 +297,7 @@ def q_age_effect(years: list) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def q_mark_pass_by_age(years: list, mark: str) -> pd.DataFrame:
     urls = _urls_list(years)
-    mark_upper = mark.strip().upper()
+    mark_upper = mark.strip().upper().replace("'", "''")
     return duckdb.sql(f"""
         WITH aged AS (
             SELECT
@@ -452,9 +452,9 @@ def q_defects_by_mark_model_year(
     # Build optional WHERE filters
     filters = ["YLEVAATUSLIIK = 'KORRALINE'", "RIKKED IS NOT NULL", "RIKKED != ''"]
     if mark:
-        filters.append(f"UPPER(MARK) = '{mark.strip().upper()}'")
+        filters.append(f"UPPER(MARK) = '{mark.strip().upper().replace(chr(39), chr(39)*2)}'")
     if mudel:
-        filters.append(f"UPPER(MUDEL) = '{mudel.strip().upper()}'")
+        filters.append(f"UPPER(MUDEL) = '{mudel.strip().upper().replace(chr(39), chr(39)*2)}'")
     if reg_aasta:
         filters.append(f"TRY_CAST(ESMANE_REG_AASTA AS INTEGER) = {reg_aasta}")
 
@@ -463,7 +463,7 @@ def q_defects_by_mark_model_year(
     # Build the IN list for defect IDs
     id_list = ", ".join(f"'{str(d)}'" for d in top_defect_ids)
 
-    return duckdb.sql(f"""
+    df = duckdb.sql(f"""
         WITH exploded AS (
             SELECT
                 MARK,
