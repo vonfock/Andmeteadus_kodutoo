@@ -117,13 +117,13 @@ def year_selector(key: str) -> list:
 if page == "🏆 Populaarseim mark":
     st.title("🏆 Populaarseim automark tehnoülevaatustel")
     st.write(
-        "Top 3 sagedamini tehnoülevaatusele tulnud automerki ja nende top 5 mudelit — "
-        "kõik valitud aastad kokku liidetuna."
+        "Top 3 sagedamini tehnoülevaatusele tulnud automarki ja nende top 5 mudelit — "
+        "kõik valitud aastad kokku summeerituna."
     )
 
     years = year_selector("mark_years")
 
-    with st.spinner("Pärin andmeid..."):
+    with st.spinner("Pärin andmeid... - aega võib kuluda kuni 1 minut"):
         mark_df, models_df = q_top_mark_and_models(years)
 
     if mark_df.empty:
@@ -136,7 +136,7 @@ if page == "🏆 Populaarseim mark":
         y="arv",
         color="MARK",
         text="arv",
-        title="Top 3 populaarsemat automerki (kokku valitud aastate peale)",
+        title="Top 3 populaarsemat automarki (kokku valitud aastate peale)",
         labels={"MARK": "Mark", "arv": "Ülevaatuste arv"},
     )
     fig.update_traces(texttemplate="%{text:,}", textposition="outside")
@@ -180,19 +180,19 @@ elif page == "👤 Inspektorite rangus":
 
     with tab1:
         st.subheader("Ülevaatuspunktide läbimise määr")
-        st.caption("Miinimum 100 ülevaatust punkti kohta.")
-        with st.spinner("Pärin punktide andmeid..."):
+        st.caption("Miinimum 100 ülevaatust tehnoülevaatuspunkti kohta.")
+        with st.spinner("Pärin andmeid... - aega võib kuluda kuni 1 minut"):
             station_df = q_station_strictness(years)
         if station_df.empty:
             st.error("Andmeid ei leitud.")
         else:
             mode_s = st.radio(
                 "Sorteeri:",
-                ["🔴 Rangeimad", "🟢 Leebemad"],
+                ["🔴 Rangeimad", "🟢 Leebeimad"],
                 horizontal=True,
                 key="station_mode",
             )
-            top_n_s = st.slider("Mitu punkti?", 5, 30, 15, key="station_n")
+            top_n_s = st.slider("Mitu punkti näitan?", 5, 30, 15, key="station_n")
             if "Rangeimad" in mode_s:
                 show = station_df.nsmallest(top_n_s, "labimise_protsent").sort_values(
                     "labimise_protsent"
@@ -237,8 +237,8 @@ elif page == "👤 Inspektorite rangus":
                             "jaam": "Punkt",
                             "jaama_kood": "Kood",
                             "kokku": "Kokku",
-                            "labis_esimesel": "Läbis",
-                            "kukkus_esimesel": "Kukkus",
+                            "labis_esimesel": "Läbis esimesel korral",
+                            "kukkus_esimesel": "Kukkus läbi esimesel korral",
                             "labimise_protsent": "Läbimise %",
                         }
                     ),
@@ -249,7 +249,7 @@ elif page == "👤 Inspektorite rangus":
     with tab2:
         st.subheader("Inspektorite läbimise määr")
         st.caption("Miinimum 50 ülevaatust inspektori kohta.")
-        with st.spinner("Pärin inspektorite andmeid..."):
+        with st.spinner("Pärin andmeid... - aega võib kuluda kuni 1 minut"):
             insp_df = q_inspector_strictness(years)
         if insp_df.empty:
             st.error("Andmeid ei leitud.")
@@ -354,10 +354,10 @@ elif page == "👤 Inspektorite rangus":
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE 3 — Oldest car per month
 # ══════════════════════════════════════════════════════════════════════════════
-elif page == "🧓 Vanim auto kuus":
-    st.title("🧓 Vanim tehnoülevaatuse läbinud auto kuude kaupa")
+elif page == "🧓 Vanim sõiduk ülevaatusel kuus":
+    st.title("🧓 Vanim tehnoülevaatuse läbinud sõiduk kuude kaupa")
     st.write(
-        "Iga kuu vanim sõiduk, mis läbis KORRALINE ülevaatuse esimesel korral (KORRAS)."
+        "Iga kuu vanim sõiduk, mis läbis KORRALISE ülevaatuse esimesel korral (KORRAS)."
     )
 
     year = st.selectbox(
@@ -369,7 +369,7 @@ elif page == "🧓 Vanim auto kuus":
     if year is None:
         st.info("Vali aasta, et päring käivitada.")
         st.stop()
-    with st.spinner(f"Pärin {year} andmeid..."):
+    with st.spinner(f"Pärin {year} andmeid... - aega võib kuluda kuni 1 minut"):
         df = q_oldest_car_per_month(year)
     if df.empty:
         st.error("Andmeid ei leitud.")
@@ -384,7 +384,7 @@ elif page == "🧓 Vanim auto kuus":
         color_continuous_scale="Oranges",
         text="vanus",
         hover_data=["MARK", "MUDEL", "reg_aasta", "KERETYYP"],
-        title=f"{year} — vanima läbinud auto vanus kuude kaupa",
+        title=f"{year} — vanima läbinud sõiduki vanus kuvatuna kuude kaupa",
         labels={"kuu_nimi": "Kuu", "vanus": "Vanus (aastat)"},
     )
     fig.update_traces(texttemplate="%{text}a", textposition="outside")
@@ -488,18 +488,18 @@ elif page == "📈 Vanuse mõju läbimisele":
 elif page == "🔧 Rikete analüüs":
     st.title("🔧 Rikete analüüs")
     st.write(
-        "Analüüsitakse KORRALINE ülevaatustel leitud rikked märgi, mudeli "
-        "ja väljalaskeaasta kaupa."
+        "Analüüsitakse KORRALINE ülevaatustel leitud rikked margi ja mudeli "
+        "ning väljalaskeaasta kaupa."
     )
     st.caption(
         "RIKKED veerg kujul: 'VO:100101460,OV:100103882' — "
-        "VO = väheoluline, OV = oluline viga, EOV = eriti ohtlik."
+        "VO = väheoluline, OV = oluline viga, EOV = eriti oluline viga."
     )
 
     years = year_selector("defects_years")
 
     # ── Overview metrics ──────────────────────────────────────────────────────
-    with st.spinner("Laen rikete ülevaate..."):
+    with st.spinner("Laen rikete ülevaadet..."):
         overview_df = q_defect_overview(years)
 
     if not overview_df.empty:
@@ -541,7 +541,7 @@ elif page == "🔧 Rikete analüüs":
 
     # ── Top defects overall ───────────────────────────────────────────────────
     st.subheader("Enim esinevad rikked")
-    top_n = st.slider("Mitu rikkeid näidata?", 5, 30, 15, key="top_n_defects")
+    top_n = st.slider("Mitu riket näidata?", 5, 30, 15, key="top_n_defects")
 
     with st.spinner("Laen enim esinevaid rikked..."):
         top_df = q_top_defects(years, top_n=top_n)
@@ -576,7 +576,7 @@ elif page == "🔧 Rikete analüüs":
     st.divider()
 
     # ── Defects by mark, model, year ─────────────────────────────────────────
-    st.subheader("Rikked märgi, mudeli ja väljalaskeaasta kaupa")
+    st.subheader("Rikked margi, mudeli ja väljalaskeaasta kaupa")
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -637,7 +637,7 @@ elif page == "🔧 Rikete analüüs":
                 st.dataframe(
                     detail_df.rename(
                         columns={
-                            "MARK": "Märk",
+                            "MARK": "Mark",
                             "MUDEL": "Mudel",
                             "reg_aasta": "Väljalaskeaasta",
                             "rike_id": "Rike ID",
@@ -652,7 +652,7 @@ elif page == "🔧 Rikete analüüs":
     st.divider()
 
     # ── Defects by mark summary ───────────────────────────────────────────────
-    st.subheader("Rikete arv märgi kaupa")
+    st.subheader("Rikete arv margi kaupa")
     with st.spinner("Laen rikete kokkuvõtet..."):
         mark_def_df = q_defects_summary_by_mark(years, top_n=20)
 
@@ -680,7 +680,7 @@ elif page == "🔧 Rikete analüüs":
 # PAGE 6 — Search by mark
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "🔍 Otsi margi järgi":
-    st.title("🔍 Otsi automärgi järgi")
+    st.title("🔍 Otsi automargi järgi")
     st.write("Sisesta automärk ja vaata läbimise tõenäosust eri vanusegruppides.")
     st.caption("Läbimise % = KORRAS / (KORRAS + KORDUVALE) KORRALINE ülevaatustel.")
 
@@ -696,7 +696,7 @@ elif page == "🔍 Otsi margi järgi":
     )
 
     if not mark_input:
-        st.info("Sisesta automärk ülal.")
+        st.info("Sisesta soiduki mark ülal.")
         st.stop()
 
     with st.spinner(f"Otsin {mark_input}..."):
@@ -708,7 +708,7 @@ elif page == "🔍 Otsi margi järgi":
         similar = [m for m in all_marks if mark_input[:3] in m][:8]
         st.error(f"Märki **{mark_input}** ei leitud.")
         if similar:
-            st.write("Sarnased märgid: " + " · ".join(similar))
+            st.write("Sarnased margid: " + " · ".join(similar))
         st.stop()
 
     total = int(df["kokku"].sum())
