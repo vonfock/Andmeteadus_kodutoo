@@ -815,6 +815,8 @@ elif page == "🤖 Ennustamine":
     model, meta = load_model()
     feature_names = meta["features"]
     metrics = meta.get("metrics", {})
+    mark_lookup = meta.get("mark_lookup", {})
+    mudel_lookup = meta.get("mudel_lookup", {})
 
     with st.expander("📊 Mudeli täpsus"):
         cols = st.columns(4)
@@ -836,9 +838,30 @@ elif page == "🤖 Ennustamine":
         "Elamu": 11, "Sadul": 12, "Paadiveok": 13, "Kvadrik": 14,
     }
 
+    # Make and model selection
+    col_mark, col_mudel = st.columns(2)
+    with col_mark:
+        mark_options = sorted(mark_lookup.keys()) if mark_lookup else []
+        selected_mark = st.selectbox(
+            "Automärk",
+            ["— vali mark —"] + mark_options,
+            key="pred_mark",
+        )
+    with col_mudel:
+        mudel_options = (
+            sorted(mudel_lookup.get(selected_mark, {}).keys())
+            if selected_mark != "— vali mark —" and mudel_lookup
+            else []
+        )
+        selected_mudel = st.selectbox(
+            "Mudel",
+            ["— vali mudel —"] + mudel_options,
+            key="pred_mudel",
+        )
+
     col1, col2 = st.columns(2)
     with col1:
-        vanus = st.number_input("Sõiduki vanus (aastat)", min_value=0, max_value=60, value=10, step=1)
+        reg_aasta = st.number_input("Tootmisaasta", min_value=1950, max_value=2025, value=2015, step=1)
         keretyyp_label = st.selectbox("Keretüüp", list(KERETYYP_MAP.keys()), index=0)
         keretyyp_kood = KERETYYP_MAP[keretyyp_label]
     with col2:
@@ -858,14 +881,29 @@ elif page == "🤖 Ennustamine":
         format_func=lambda x: MONTH_NAMES[x],
     )
 
+    vanus = max(0, 2025 - int(reg_aasta))
+
+    mark_data = (
+        mark_lookup.get(selected_mark, {"sagedus": 50000, "labimise_maar": 0.75})
+        if selected_mark != "— vali mark —"
+        else {"sagedus": 50000, "labimise_maar": 0.75}
+    )
+    mudel_data = (
+        mudel_lookup.get(selected_mark, {}).get(selected_mudel, {"sagedus": 1000, "labimise_maar": 0.75})
+        if selected_mark != "— vali mark —" and selected_mudel != "— vali mudel —"
+        else {"sagedus": 1000, "labimise_maar": 0.75}
+    )
+
     input_vals = {
         "VANUS": float(vanus),
         "VANUS_RUUT": float(vanus ** 2),
         "ON_VANA": float(1 if vanus > 10 else 0),
         "KUU_SIN": float(_np.sin(2 * _np.pi * kuu / 12)),
         "KUU_COS": float(_np.cos(2 * _np.pi * kuu / 12)),
-        "MARK_SAGEDUS": 50000.0,
-        "MARK_LABIMISE_MAAR": 0.75,
+        "MARK_SAGEDUS": float(mark_data["sagedus"]),
+        "MARK_LABIMISE_MAAR": float(mark_data["labimise_maar"]),
+        "MUDEL_SAGEDUS": float(mudel_data["sagedus"]),
+        "MUDEL_LABIMISE_MAAR": float(mudel_data["labimise_maar"]),
         "KERETYYP_KOOD": float(keretyyp_kood),
         "PUNKTI_RANGUS": float(punkti_rangus),
         "EELMISED_YV": float(eelmised_yv),

@@ -36,6 +36,8 @@ FEATURE_COLS = [
     "KUU_COS",
     "MARK_SAGEDUS",
     "MARK_LABIMISE_MAAR",
+    "MUDEL_SAGEDUS",
+    "MUDEL_LABIMISE_MAAR",
     "KERETYYP_KOOD",
     "PUNKTI_RANGUS",
     "EELMISED_YV",
@@ -161,7 +163,33 @@ def evaluate_model(model, X_test, y_test, feature_names: list) -> dict:
     return metrics
 
 
-def save_model(model, metrics: dict, feature_names: list):
+def build_lookups(df: pd.DataFrame) -> tuple[dict, dict]:
+    """Build mark and model lookup dicts from the feature dataframe."""
+    mark_lookup = {}
+    if "MARK" in df.columns and "MARK_SAGEDUS" in df.columns:
+        for mark, grp in df.groupby("MARK"):
+            if pd.notna(mark) and str(mark).strip():
+                mark_lookup[str(mark)] = {
+                    "sagedus": int(grp["MARK_SAGEDUS"].iloc[0]),
+                    "labimise_maar": float(grp["MARK_LABIMISE_MAAR"].iloc[0]),
+                }
+
+    mudel_lookup: dict = {}
+    if "MUDEL" in df.columns and "MUDEL_SAGEDUS" in df.columns:
+        for (mark, mudel), grp in df.groupby(["MARK", "MUDEL"]):
+            if pd.notna(mark) and pd.notna(mudel) and str(mark).strip() and str(mudel).strip():
+                mark_key = str(mark)
+                if mark_key not in mudel_lookup:
+                    mudel_lookup[mark_key] = {}
+                mudel_lookup[mark_key][str(mudel)] = {
+                    "sagedus": int(grp["MUDEL_SAGEDUS"].iloc[0]),
+                    "labimise_maar": float(grp["MUDEL_LABIMISE_MAAR"].iloc[0]),
+                }
+
+    return mark_lookup, mudel_lookup
+
+
+def save_model(model, metrics: dict, feature_names: list, df: pd.DataFrame = None):
     """Save trained model and metadata."""
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -174,6 +202,13 @@ def save_model(model, metrics: dict, feature_names: list):
         "metrics": {k: v for k, v in metrics.items() if k != "feature_importance"},
         "feature_importance": metrics.get("feature_importance", []),
     }
+
+    if df is not None:
+        mark_lookup, mudel_lookup = build_lookups(df)
+        meta["mark_lookup"] = mark_lookup
+        meta["mudel_lookup"] = mudel_lookup
+        print(f"  Lookup: {len(mark_lookup)} margid, {sum(len(v) for v in mudel_lookup.values())} mudelid")
+
     meta_path = MODEL_DIR / "model_metadata.json"
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2, ensure_ascii=False)
@@ -205,7 +240,7 @@ if __name__ == "__main__":
         X_train, X_test, y_train, y_test, features = prepare_data(df)
         model = train_model(X_train, y_train)
         metrics = evaluate_model(model, X_test, y_test, features)
-        save_model(model, metrics, features)
+        save_model(model, metrics, features, df)
 
         # Save metrics summary
         metrics_path = PROCESSED_DIR / "model_metrics.json"

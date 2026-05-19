@@ -63,6 +63,25 @@ def create_ml_features(df: pd.DataFrame) -> pd.DataFrame:
         left_on="MARK", right_index=True, how="left"
     )
 
+    # --- Feature: Model frequency encoding ---
+    if "MUDEL" in ml_df.columns:
+        mudel_counts = ml_df["MUDEL"].value_counts()
+        ml_df["MUDEL_SAGEDUS"] = ml_df["MUDEL"].map(mudel_counts).fillna(0)
+
+        mudel_stats = ml_df.groupby("MUDEL").agg(
+            mudel_kokku=("LABIS_ESIMESEL", "count"),
+            mudel_labis=("LABIS_ESIMESEL", "mean")
+        )
+        mudel_stats["MUDEL_LABIMISE_MAAR"] = (
+            (mudel_stats["mudel_labis"] * mudel_stats["mudel_kokku"] +
+             global_pass_rate * smoothing_factor) /
+            (mudel_stats["mudel_kokku"] + smoothing_factor)
+        )
+        ml_df = ml_df.merge(
+            mudel_stats[["MUDEL_LABIMISE_MAAR"]],
+            left_on="MUDEL", right_index=True, how="left"
+        )
+
     # --- Feature: Body type encoding ---
     body_map = {
         "SEDAAN": 0, "UNIVERSAAL": 1, "LUUKPÄRA": 2,
@@ -103,6 +122,7 @@ def create_ml_features(df: pd.DataFrame) -> pd.DataFrame:
         "VANUS", "VANUS_RUUT", "ON_VANA",
         "KUU_SIN", "KUU_COS",
         "MARK_SAGEDUS", "MARK_LABIMISE_MAAR",
+        "MUDEL_SAGEDUS", "MUDEL_LABIMISE_MAAR",
         "KERETYYP_KOOD",
         "PUNKTI_RANGUS",
         "EELMISED_YV",
@@ -125,6 +145,8 @@ def get_feature_columns() -> list:
         "KUU_COS",
         "MARK_SAGEDUS",
         "MARK_LABIMISE_MAAR",
+        "MUDEL_SAGEDUS",
+        "MUDEL_LABIMISE_MAAR",
         "KERETYYP_KOOD",
         "PUNKTI_RANGUS",
         "EELMISED_YV",
