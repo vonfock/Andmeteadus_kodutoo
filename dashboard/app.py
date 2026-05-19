@@ -584,7 +584,7 @@ elif page == "🔧 Rikete analüüs":
     with col1:
         mark_filter = (
             st.text_input(
-                "Automärk (valikuline):", placeholder="nt VOLKSWAGEN", key="defect_mark"
+                "Automark (valikuline):", placeholder="nt VOLKSWAGEN", key="defect_mark"
             )
             .strip()
             .upper()
@@ -683,14 +683,14 @@ elif page == "🔧 Rikete analüüs":
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "🔍 Otsi margi järgi":
     st.title("🔍 Otsi automargi järgi")
-    st.write("Sisesta automärk ja vaata läbimise tõenäosust eri vanusegruppides.")
+    st.write("Sisesta automark ja vaata läbimise tõenäosust eri vanusegruppides.")
     st.caption("Läbimise % = KORRAS / (KORRAS + KORDUVALE) KORRALINE ülevaatustel.")
 
     years = year_selector("search_years")
 
     mark_input = (
         st.text_input(
-            "Sisesta automärk (nt VOLKSWAGEN, BMW, TOYOTA):",
+            "Sisesta automark (nt VOLKSWAGEN, BMW, TOYOTA):",
             placeholder="VOLKSWAGEN",
         )
         .strip()
@@ -817,6 +817,7 @@ elif page == "🤖 Ennustamine":
     metrics = meta.get("metrics", {})
     mark_lookup = meta.get("mark_lookup", {})
     mudel_lookup = meta.get("mudel_lookup", {})
+    station_lookup = meta.get("station_lookup", {})
 
     with st.expander("📊 Mudeli täpsus"):
         cols = st.columns(4)
@@ -843,7 +844,7 @@ elif page == "🤖 Ennustamine":
     with col_mark:
         mark_options = sorted(mark_lookup.keys()) if mark_lookup else []
         selected_mark = st.selectbox(
-            "Automärk",
+            "Automark",
             ["— vali mark —"] + mark_options,
             key="pred_mark",
         )
@@ -865,10 +866,23 @@ elif page == "🤖 Ennustamine":
         keretyyp_label = st.selectbox("Keretüüp", list(KERETYYP_MAP.keys()), index=0)
         keretyyp_kood = KERETYYP_MAP[keretyyp_label]
     with col2:
-        punkti_rangus = st.slider(
-            "Ülevaatuspunkti rangus (% kukkumisi, 0=leebe, 40=range)",
-            min_value=0.0, max_value=50.0, value=20.0, step=0.5,
-        )
+        if station_lookup:
+            station_options = sorted(station_lookup.keys())
+            selected_station = st.selectbox(
+                "Ülevaatuspunkt",
+                ["— vali ülevaatuspunkt —"] + station_options,
+                key="pred_station",
+            )
+            punkti_rangus = (
+                station_lookup[selected_station]
+                if selected_station != "— vali ülevaatuspunkt —"
+                else 15.0
+            )
+        else:
+            punkti_rangus = st.slider(
+                "Ülevaatuspunkti rangus (% läbikukkumisi, 0=leebe, 40=range)",
+                min_value=0.0, max_value=50.0, value=15.0, step=0.5,
+            )
         eelmised_yv = st.number_input(
             "Varasemaid ülevaatusi sellel sõidukil", min_value=0, max_value=30, value=0, step=1
         )

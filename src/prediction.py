@@ -163,8 +163,8 @@ def evaluate_model(model, X_test, y_test, feature_names: list) -> dict:
     return metrics
 
 
-def build_lookups(df: pd.DataFrame) -> tuple[dict, dict]:
-    """Build mark and model lookup dicts from the feature dataframe."""
+def build_lookups(df: pd.DataFrame) -> tuple[dict, dict, dict]:
+    """Build mark, model, and station lookup dicts from the feature dataframe."""
     mark_lookup = {}
     if "MARK" in df.columns and "MARK_SAGEDUS" in df.columns:
         for mark, grp in df.groupby("MARK"):
@@ -186,7 +186,17 @@ def build_lookups(df: pd.DataFrame) -> tuple[dict, dict]:
                     "labimise_maar": float(grp["MUDEL_LABIMISE_MAAR"].iloc[0]),
                 }
 
-    return mark_lookup, mudel_lookup
+    station_lookup = {}
+    if "TEHNOYLEVAATUSPUNKT" in df.columns and "PUNKTI_RANGUS" in df.columns:
+        station_lookup = (
+            df.dropna(subset=["TEHNOYLEVAATUSPUNKT", "PUNKTI_RANGUS"])
+            .groupby("TEHNOYLEVAATUSPUNKT")["PUNKTI_RANGUS"]
+            .mean()
+            .round(2)
+            .to_dict()
+        )
+
+    return mark_lookup, mudel_lookup, station_lookup
 
 
 def save_model(model, metrics: dict, feature_names: list, df: pd.DataFrame = None):
@@ -204,10 +214,11 @@ def save_model(model, metrics: dict, feature_names: list, df: pd.DataFrame = Non
     }
 
     if df is not None:
-        mark_lookup, mudel_lookup = build_lookups(df)
+        mark_lookup, mudel_lookup, station_lookup = build_lookups(df)
         meta["mark_lookup"] = mark_lookup
         meta["mudel_lookup"] = mudel_lookup
-        print(f"  Lookup: {len(mark_lookup)} margid, {sum(len(v) for v in mudel_lookup.values())} mudelid")
+        meta["station_lookup"] = station_lookup
+        print(f"  Lookup: {len(mark_lookup)} margid, {sum(len(v) for v in mudel_lookup.values())} mudelid, {len(station_lookup)} jaamad")
 
     meta_path = MODEL_DIR / "model_metadata.json"
     with open(meta_path, "w", encoding="utf-8") as f:
