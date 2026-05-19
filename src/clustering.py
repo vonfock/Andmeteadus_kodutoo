@@ -29,6 +29,16 @@ CLUSTER_FEATURES = [
 ]
 
 
+def _sample_for_fit(X: np.ndarray, max_rows: int = 500_000, seed: int = 42) -> np.ndarray:
+    """Return a random subsample for K-Means fitting when dataset is large."""
+    if len(X) <= max_rows:
+        return X
+    rng = np.random.default_rng(seed)
+    idx = rng.choice(len(X), size=max_rows, replace=False)
+    print(f"Sampling {max_rows:,} / {len(X):,} rows for K-Means fitting")
+    return X[idx]
+
+
 def prepare_clustering_data(df: pd.DataFrame) -> tuple:
     """
     Prepare data for clustering: select features, drop NaN, scale.
@@ -49,16 +59,18 @@ def prepare_clustering_data(df: pd.DataFrame) -> tuple:
 def find_optimal_k(X: np.ndarray, k_range: range = range(2, 11)) -> dict:
     """
     Find optimal number of clusters using elbow method and silhouette score.
-    
+
     Returns dict with inertia and silhouette scores for each k.
+    Fits on a sample when dataset is large.
     """
+    X_fit = _sample_for_fit(X)
     results = {"k": [], "inertia": [], "silhouette": []}
 
     print("\nFinding optimal k:")
     for k in k_range:
         km = KMeans(n_clusters=k, random_state=42, n_init=10)
-        labels = km.fit_predict(X)
-        sil = silhouette_score(X, labels)
+        labels = km.fit_predict(X_fit)
+        sil = silhouette_score(X_fit, labels)
         results["k"].append(k)
         results["inertia"].append(km.inertia_)
         results["silhouette"].append(sil)
@@ -84,7 +96,7 @@ def plot_elbow(results: dict, save_path: Path = None):
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
-        print(f"\n✓ Elbow plot saved: {save_path}")
+        print(f"\nOK Elbow plot saved: {save_path}")
     plt.close()
 
 
@@ -96,15 +108,17 @@ def run_clustering(df: pd.DataFrame, n_clusters: int = 4) -> pd.DataFrame:
     """
     X_scaled, scaler, clean_df = prepare_clustering_data(df)
 
-    # Find optimal k
+    # Find optimal k (fits on sample)
     results = find_optimal_k(X_scaled)
     plot_path = PROCESSED_DIR / "elbow_plot.png"
     plot_elbow(results, plot_path)
 
-    # Run final clustering
+    # Run final clustering (fit on sample, predict on all)
     print(f"\nRunning K-Means with k={n_clusters}...")
+    X_fit = _sample_for_fit(X_scaled)
     km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-    clean_df["KLASTER"] = km.fit_predict(X_scaled)
+    km.fit(X_fit)
+    clean_df["KLASTER"] = km.predict(X_scaled)
 
     # Describe each cluster
     print(f"\n=== Cluster Profiles ===")
@@ -148,11 +162,16 @@ def run_clustering(df: pd.DataFrame, n_clusters: int = 4) -> pd.DataFrame:
 if __name__ == "__main__":
     input_path = PROCESSED_DIR / "features.csv"
     if not input_path.exists():
-        print(f"✗ Feature data not found at {input_path}")
+        print(f"ERROR Feature data not found at {input_path}")
         print("  Run feature_engineering.py first.")
     else:
-        df = pd.read_csv(input_path)
+        # Read only the columns needed for clustering + profiling to keep RAM low
+        needed_cols = list(set(CLUSTER_FEATURES + ["MARK", "LABIS_ESIMESEL"]))
+        existing_cols = pd.read_csv(input_path, nrows=0).columns.tolist()
+        read_cols = [c for c in needed_cols if c in existing_cols]
+        df = pd.read_csv(input_path, usecols=read_cols)
         df = run_clustering(df, n_clusters=4)
         output_path = PROCESSED_DIR / "clustered.csv"
-        df.to_csv(output_path, index=False)
-        print(f"\n✓ Clustered data saved: {output_path}")
+        df[["KLASTER"]].to_csv(output_path, index=True)
+        print(f"\nOK Cluster labels saved: {output_path}")
+        print("  (Index matches features.csv row order)")

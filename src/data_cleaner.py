@@ -234,7 +234,7 @@ def load_rike_table() -> pd.DataFrame:
     """Load the defect codes lookup table."""
     rike_path = RAW_DIR / "rike.csv"
     if not rike_path.exists():
-        print(f"  ⚠ rike.csv not found at {rike_path}")
+        print(f"  WARNING rike.csv not found at {rike_path}")
         return pd.DataFrame()
 
     df = pd.read_csv(rike_path, dtype=str)
@@ -246,18 +246,41 @@ def load_rike_table() -> pd.DataFrame:
     return df
 
 
+def load_raw_csvs(raw_dir: Path = None) -> pd.DataFrame:
+    """Read all yearly CSVs from data/raw/ and concatenate them."""
+    if raw_dir is None:
+        raw_dir = RAW_DIR
+    year_files = sorted(raw_dir.glob("[0-9][0-9][0-9][0-9].csv"))
+    if not year_files:
+        raise FileNotFoundError(f"No year CSVs found in {raw_dir}")
+    chunks = []
+    for f in year_files:
+        print(f"  Reading {f.name}...", end=" ", flush=True)
+        chunk = pd.read_csv(f, dtype=str, low_memory=False)
+        # Filter to KORRALINE only upfront to cut data volume in half
+        if "YLEVAATUSLIIK" in chunk.columns:
+            chunk = chunk[chunk["YLEVAATUSLIIK"] == "KORRALINE"]
+        chunks.append(chunk)
+        print(f"{len(chunk):,} rows")
+    df = pd.concat(chunks, ignore_index=True)
+    print(f"  Total after concat: {len(df):,} rows\n")
+    return df
+
+
 def clean_data(input_path: Path = None) -> pd.DataFrame:
     """
     Run the full cleaning pipeline.
 
     Returns cleaned DataFrame and saves to data/processed/cleaned.csv
     """
-    if input_path is None:
-        input_path = PROCESSED_DIR / "combined_raw.csv"
-
     print(f"=== Data Cleaning Pipeline ===\n")
-    print(f"Reading: {input_path}")
-    df = pd.read_csv(input_path, dtype=str)
+    if input_path is not None and Path(input_path).exists():
+        print(f"Reading: {input_path}")
+        df = pd.read_csv(input_path, dtype=str)
+        print(f"  Rows: {len(df):,}")
+    else:
+        print("Reading year CSVs from data/raw/...")
+        df = load_raw_csvs()
     print(f"  Rows: {len(df):,}")
 
     print("\n1. Fixing encoding...")
@@ -284,7 +307,7 @@ def clean_data(input_path: Path = None) -> pd.DataFrame:
     # Save
     output_path = PROCESSED_DIR / "cleaned.csv"
     df.to_csv(output_path, index=False)
-    print(f"\n✓ Saved cleaned data: {output_path} ({len(df):,} rows)")
+    print(f"\nSaved cleaned data: {output_path} ({len(df):,} rows)")
 
     # Summary
     print(f"\n=== Cleaning Summary ===")

@@ -86,10 +86,12 @@ page = st.sidebar.radio(
     [
         "🏆 Populaarseim mark",
         "👤 Inspektorite rangus",
-        "🧓 Vanim auto kuus",
+        "🧓 Vanim sõiduk ülevaatusel kuus",
         "📈 Vanuse mõju läbimisele",
         "🔧 Rikete analüüs",
         "🔍 Otsi margi järgi",
+        "🤖 Ennustamine",
+        "📦 Klastrid",
     ],
 )
 
@@ -775,3 +777,234 @@ elif page == "🔍 Otsi margi järgi":
         use_container_width=True,
         hide_index=True,
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE 7 — Prediction (Ennustamine)
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "🤖 Ennustamine":
+    import pickle
+    import json as _json
+    import numpy as _np
+    import pandas as _pd
+
+    st.title("🤖 Ennusta tehnoülevaatuse tulemus")
+    st.write(
+        "Sisesta sõiduki andmed ja mudel ennustab, kui tõenäoliselt sõiduk läbib "
+        "KORRALISE tehnoülevaatuse esimesel korral."
+    )
+
+    MODEL_PATH = Path(__file__).parent.parent / "models" / "random_forest.pkl"
+    META_PATH = Path(__file__).parent.parent / "models" / "model_metadata.json"
+
+    if not MODEL_PATH.exists():
+        st.warning(
+            "Mudeli fail (`models/random_forest.pkl`) puudub. "
+            "Käivita esmalt `python src/prediction.py`, et mudel treenida."
+        )
+        st.stop()
+
+    @st.cache_resource
+    def load_model():
+        with open(MODEL_PATH, "rb") as f:
+            model = pickle.load(f)
+        with open(META_PATH, "r", encoding="utf-8") as f:
+            meta = _json.load(f)
+        return model, meta
+
+    model, meta = load_model()
+    feature_names = meta["features"]
+    metrics = meta.get("metrics", {})
+
+    with st.expander("📊 Mudeli täpsus"):
+        cols = st.columns(4)
+        for col, (k, label) in zip(
+            cols,
+            [("accuracy", "Täpsus"), ("f1", "F1"), ("roc_auc", "ROC AUC"), ("precision", "Precision")],
+        ):
+            if k in metrics:
+                col.metric(label, f"{metrics[k]:.3f}")
+
+    st.divider()
+    st.subheader("Sisesta sõiduki andmed")
+
+    KERETYYP_MAP = {
+        "Sedaan": 0, "Universaal": 1, "Luukpära": 2,
+        "Mahtuniversaal": 3, "Kaubik": 4, "Kupee": 5,
+        "Lahtine": 6, "Pikap": 7, "Mootorratas": 8,
+        "Mitmeotstarbeline": 9, "Madel": 10,
+        "Elamu": 11, "Sadul": 12, "Paadiveok": 13, "Kvadrik": 14,
+    }
+
+    col1, col2 = st.columns(2)
+    with col1:
+        vanus = st.number_input("Sõiduki vanus (aastat)", min_value=0, max_value=60, value=10, step=1)
+        keretyyp_label = st.selectbox("Keretüüp", list(KERETYYP_MAP.keys()), index=0)
+        keretyyp_kood = KERETYYP_MAP[keretyyp_label]
+    with col2:
+        punkti_rangus = st.slider(
+            "Ülevaatuspunkti rangus (% kukkumisi, 0=leebe, 40=range)",
+            min_value=0.0, max_value=50.0, value=20.0, step=0.5,
+        )
+        eelmised_yv = st.number_input(
+            "Varasemaid ülevaatusi sellel sõidukil", min_value=0, max_value=30, value=0, step=1
+        )
+
+    # Month selector for seasonality features
+    kuu = st.select_slider(
+        "Ülevaatuse kuu",
+        options=list(range(1, 13)),
+        value=6,
+        format_func=lambda x: MONTH_NAMES[x],
+    )
+
+    input_vals = {
+        "VANUS": float(vanus),
+        "VANUS_RUUT": float(vanus ** 2),
+        "ON_VANA": float(1 if vanus > 10 else 0),
+        "KUU_SIN": float(_np.sin(2 * _np.pi * kuu / 12)),
+        "KUU_COS": float(_np.cos(2 * _np.pi * kuu / 12)),
+        "MARK_SAGEDUS": 50000.0,
+        "MARK_LABIMISE_MAAR": 0.75,
+        "KERETYYP_KOOD": float(keretyyp_kood),
+        "PUNKTI_RANGUS": float(punkti_rangus),
+        "EELMISED_YV": float(eelmised_yv),
+    }
+
+    if st.button("Ennusta", type="primary"):
+        row = _pd.DataFrame([[input_vals[f] for f in feature_names]], columns=feature_names)
+        prob = model.predict_proba(row)[0][1] * 100
+
+        st.divider()
+        if prob >= 75:
+            st.success(f"### ✅ Läbimise tõenäosus: **{prob:.1f}%**")
+        elif prob >= 50:
+            st.warning(f"### ⚠️ Läbimise tõenäosus: **{prob:.1f}%**")
+        else:
+            st.error(f"### ❌ Läbimise tõenäosus: **{prob:.1f}%**")
+
+        gauge = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=prob,
+            number={"suffix": "%"},
+            title={"text": "Läbimise tõenäosus"},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": "darkblue"},
+                "steps": [
+                    {"range": [0, 50], "color": "#ff6b6b"},
+                    {"range": [50, 75], "color": "#ffd93d"},
+                    {"range": [75, 100], "color": "#6bcb77"},
+                ],
+                "threshold": {
+                    "line": {"color": "black", "width": 3},
+                    "thickness": 0.75,
+                    "value": 75,
+                },
+            },
+        ))
+        gauge.update_layout(height=300)
+        st.plotly_chart(gauge, use_container_width=True)
+
+    with st.expander("ℹ️ Mudeli tunnuste tähtsus"):
+        fi = meta.get("feature_importance", [])
+        if fi:
+            fi_df = _pd.DataFrame(fi).sort_values("importance", ascending=True)
+            fig_fi = px.bar(
+                fi_df, x="importance", y="feature", orientation="h",
+                labels={"importance": "Olulisus", "feature": "Tunnus"},
+                title="Tunnuste olulisus (Random Forest)",
+            )
+            st.plotly_chart(fig_fi, use_container_width=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE 8 — Clusters (Klastrid)
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "📦 Klastrid":
+    import json as _json
+    import pandas as _pd
+
+    st.title("📦 Sõidukite klastrid")
+    st.write(
+        "K-Means klasterdamine grupeerib ülevaatused sarnaste profiilide järgi "
+        "(sõiduki vanus, keretüüp, ülevaatuspunkti rangus)."
+    )
+
+    PROFILES_PATH = Path(__file__).parent.parent / "data" / "processed" / "cluster_profiles.json"
+    ELBOW_PATH = Path(__file__).parent.parent / "data" / "processed" / "elbow_plot.png"
+
+    if not PROFILES_PATH.exists():
+        st.warning(
+            "Klastrite fail (`data/processed/cluster_profiles.json`) puudub. "
+            "Käivita esmalt `python src/clustering.py`."
+        )
+        st.stop()
+
+    with open(PROFILES_PATH, "r", encoding="utf-8") as f:
+        profiles = _json.load(f)
+
+    st.subheader(f"Leiti {len(profiles)} klastrit")
+
+    cols = st.columns(len(profiles))
+    for col, p in zip(cols, profiles):
+        with col:
+            st.metric(f"Klaster {p['cluster']}", p["pct"])
+            st.write(f"**Keskmine vanus:** {p['avg_age']:.1f} a")
+            st.write(f"**Rangus:** {p['avg_strictness']:.1f}%")
+            if p.get("pass_rate") is not None:
+                st.write(f"**Läbimise %:** {p['pass_rate']:.1f}%")
+            if p.get("top_makes"):
+                top = list(p["top_makes"].keys())[:3]
+                st.write(f"**Top margid:** {', '.join(top)}")
+
+    st.divider()
+
+    import pandas as _pd
+    profile_df = _pd.DataFrame([
+        {
+            "Klaster": p["cluster"],
+            "Suurus": p["pct"],
+            "Keskmine vanus (a)": round(p["avg_age"], 1),
+            "Punkti rangus (%)": round(p["avg_strictness"], 1),
+            "Läbimise % (esimesel)": round(p["pass_rate"], 1) if p.get("pass_rate") is not None else "—",
+            "Top margid": ", ".join(list(p.get("top_makes", {}).keys())[:3]),
+        }
+        for p in profiles
+    ])
+    st.dataframe(profile_df, use_container_width=True, hide_index=True)
+
+    if ELBOW_PATH.exists():
+        st.divider()
+        st.subheader("Optimaalse k leidmine")
+        st.image(str(ELBOW_PATH), caption="Elbow-meetod ja siluetiskoor")
+
+    st.divider()
+    st.subheader("Klastrite võrdlus")
+    if len(profiles) > 1 and all(p.get("pass_rate") is not None for p in profiles):
+        fig_cluster = px.bar(
+            profile_df,
+            x="Klaster",
+            y="Läbimise % (esimesel)",
+            color="Läbimise % (esimesel)",
+            color_continuous_scale="RdYlGn",
+            text="Läbimise % (esimesel)",
+            title="Läbimise % klastri järgi",
+            labels={"Klaster": "Klaster", "Läbimise % (esimesel)": "Läbimise %"},
+        )
+        fig_cluster.update_traces(texttemplate="%{text}%", textposition="outside")
+        fig_cluster.update_layout(coloraxis_showscale=False)
+        st.plotly_chart(fig_cluster, use_container_width=True)
+
+    fig_scatter = px.scatter(
+        profile_df,
+        x="Keskmine vanus (a)",
+        y="Punkti rangus (%)",
+        size=[float(str(p["pct"]).rstrip("%")) for p in profiles],
+        color=[f"Klaster {p['cluster']}" for p in profiles],
+        text=[f"K{p['cluster']}" for p in profiles],
+        title="Klastrid: vanus vs punkti rangus (suurus = klastri osakaal)",
+        labels={"x": "Keskmine vanus (a)", "y": "Punkti rangus (%)"},
+    )
+    fig_scatter.update_traces(textposition="top center")
+    st.plotly_chart(fig_scatter, use_container_width=True)

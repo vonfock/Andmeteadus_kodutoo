@@ -134,11 +134,11 @@ def get_feature_columns() -> list:
 if __name__ == "__main__":
     input_path = PROCESSED_DIR / "cleaned.csv"
     if not input_path.exists():
-        print(f"✗ Cleaned data not found at {input_path}")
+        print(f"ERROR Cleaned data not found at {input_path}")
         print("  Run data_cleaner.py first.")
     else:
         df = pd.read_csv(input_path)
         ml_df = create_ml_features(df)
         output_path = PROCESSED_DIR / "features.csv"
         ml_df.to_csv(output_path, index=False)
-        print(f"\n✓ Feature matrix saved: {output_path} ({len(ml_df):,} rows)")
+        print(f"\nOK Feature matrix saved: {output_path} ({len(ml_df):,} rows)")

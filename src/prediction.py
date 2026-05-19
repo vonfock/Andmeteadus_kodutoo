@@ -83,7 +83,7 @@ def train_model(X_train, y_train) -> RandomForestClassifier:
         class_weight="balanced",  # Handle class imbalance
     )
     model.fit(X_train, y_train)
-    print("✓ Model trained")
+    print("Model trained")
     return model
 
 
@@ -141,7 +141,7 @@ def evaluate_model(model, X_test, y_test, feature_names: list) -> dict:
     plot_path = PROCESSED_DIR / "model_evaluation.png"
     plt.savefig(plot_path, dpi=150, bbox_inches="tight")
     plt.close()
-    print(f"\n✓ Evaluation plots saved: {plot_path}")
+    print(f"\nOK Evaluation plots saved: {plot_path}")
 
     # ROC Curve
     fpr, tpr, _ = roc_curve(y_test, y_prob)
@@ -178,8 +178,8 @@ def save_model(model, metrics: dict, feature_names: list):
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2, ensure_ascii=False)
 
-    print(f"\n✓ Model saved: {model_path}")
-    print(f"✓ Metadata saved: {meta_path}")
+    print(f"\nOK Model saved: {model_path}")
+    print(f"OK Metadata saved: {meta_path}")
 
 
 def predict_single(model, feature_names: list, **kwargs) -> float:
@@ -198,7 +198,7 @@ def predict_single(model, feature_names: list, **kwargs) -> float:
 if __name__ == "__main__":
     input_path = PROCESSED_DIR / "features.csv"
     if not input_path.exists():
-        print(f"✗ Feature data not found at {input_path}")
+        print(f"ERROR Feature data not found at {input_path}")
         print("  Run feature_engineering.py first.")
     else:
         df = pd.read_csv(input_path)
