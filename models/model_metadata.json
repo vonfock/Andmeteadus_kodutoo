@@ -1,0 +1,69 @@
+{
+  "features": [
+    "VANUS",
+    "VANUS_RUUT",
+    "ON_VANA",
+    "KUU_SIN",
+    "KUU_COS",
+    "MARK_SAGEDUS",
+    "MARK_LABIMISE_MAAR",
+    "KERETYYP_KOOD",
+    "PUNKTI_RANGUS",
+    "EELMISED_YV"
+  ],
+  "metrics": {
+    "accuracy": 0.6119,
+    "f1": 0.719,
+    "roc_auc": 0.7358,
+    "precision": 0.933
+  },
+  "best_params": {
+    "max_depth": 10,
+    "min_samples_leaf": 10,
+    "n_estimators": 200
+  },
+  "feature_importance": [
+    {
+      "feature": "KUU_SIN",
+      "importance": 0.006728505854275927
+    },
+    {
+      "feature": "KUU_COS",
+      "importance": 0.01225484584953042
+    },
+    {
+      "feature": "EELMISED_YV",
+      "importance": 0.0389934060999734
+    },
+    {
+      "feature": "MARK_SAGEDUS",
+      "importance": 0.0625211612743498
+    },
+    {
+      "feature": "KERETYYP_KOOD",
+      "importance": 0.08683286003465984
+    },
+    {
+      "feature": "ON_VANA",
+      "importance": 0.08697136734990384
+    },
+    {
+      "feature": "PUNKTI_RANGUS",
+      "importance": 0.11644575067142615
+    },
+    {
+      "feature": "VANUS_RUUT",
+      "importance": 0.15626499831964125
+    },
+    {
+      "feature": "VANUS",
+      "importance": 0.18151731149896574
+    },
+    {
+      "feature": "MARK_LABIMISE_MAAR",
+      "importance": 0.25146979304727357
+    }
+  ],
+  "train_year": 2025,
+  "train_rows": 495348
+}

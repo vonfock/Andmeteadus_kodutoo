@@ -1,0 +1,80 @@
+[
+  {
+    "cluster": 0,
+    "size": 40686,
+    "pct": "6.6%",
+    "avg_age": 34.0,
+    "avg_strictness": 15.3,
+    "pass_rate": 82.6,
+    "top_makes": {
+      "VOLKSWAGEN": 4851,
+      "AUDI": 4647,
+      "MTZ": 2777
+    }
+  },
+  {
+    "cluster": 1,
+    "size": 102564,
+    "pct": "16.6%",
+    "avg_age": 12.0,
+    "avg_strictness": 14.2,
+    "pass_rate": 84.1,
+    "top_makes": {
+      "VOLKSWAGEN": 12462,
+      "FORD": 11455,
+      "CITROEN": 10466
+    }
+  },
+  {
+    "cluster": 2,
+    "size": 161983,
+    "pct": "26.2%",
+    "avg_age": 18.7,
+    "avg_strictness": 12.5,
+    "pass_rate": 82.7,
+    "top_makes": {
+      "VOLKSWAGEN": 19687,
+      "VOLVO": 15922,
+      "BMW": 14421
+    }
+  },
+  {
+    "cluster": 3,
+    "size": 148031,
+    "pct": "23.9%",
+    "avg_age": 14.1,
+    "avg_strictness": 19.9,
+    "pass_rate": 79.2,
+    "top_makes": {
+      "VOLKSWAGEN": 16285,
+      "VOLVO": 11014,
+      "BMW": 10905
+    }
+  },
+  {
+    "cluster": 4,
+    "size": 39372,
+    "pct": "6.4%",
+    "avg_age": 15.6,
+    "avg_strictness": 15.1,
+    "pass_rate": 89.8,
+    "top_makes": {
+      "TOYOTA": 6248,
+      "HONDA": 4555,
+      "YAMAHA": 2817
+    }
+  },
+  {
+    "cluster": 5,
+    "size": 126549,
+    "pct": "20.4%",
+    "avg_age": 7.5,
+    "avg_strictness": 13.5,
+    "pass_rate": 94.3,
+    "top_makes": {
+      "SKODA": 9080,
+      "TOYOTA": 8355,
+      "VOLVO": 8237
+    }
+  }
+]

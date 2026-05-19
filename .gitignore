@@ -10,10 +10,21 @@ __pycache__/
 dist/
 build/
 
-# Data files (large CSVs should not be in git)
+# Data files (large/generated — fetched or produced by the pipeline)
 data/raw/*.csv
 data/processed/*.csv
 data/processed/*.parquet
+data/processed/*.json
+data/processed/*.png
+models/*.pkl
+models/*.json
+
+# ML outputs — track the trained artifacts
+!data/processed/cluster_profiles.json
+!data/processed/elbow_plot.png
+!data/processed/model_evaluation.png
+!models/random_forest.pkl
+!models/model_metadata.json
 
 # Keep the data folders with README
 !data/raw/.gitkeep
@@ -39,3 +50,9 @@ Thumbs.db
 
 # Environment
 .env
+
+# Claude Code context file
+CLAUDE.md
+
+# Examples folder
+EXAMPLES/
