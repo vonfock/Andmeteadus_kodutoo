@@ -50,6 +50,11 @@ Thumbs.db
 
 # Environment
 .env
+.duckdb/
+.matplotlib/
+.jupyter/
+.ipython/
+data/cache/
 
 # Claude Code context file
 CLAUDE.md

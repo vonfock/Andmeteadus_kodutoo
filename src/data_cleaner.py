@@ -16,6 +16,11 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
+try:
+    from src.defects import count_severities, defect_ids, parse_rikked
+except ModuleNotFoundError:
+    from defects import count_severities, defect_ids, parse_rikked
+
 PROJECT_ROOT = Path(__file__).parent.parent
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
@@ -96,43 +101,6 @@ def add_vehicle_age(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# --- Defect (RIKKED) parsing ---
-
-
-def parse_rikked(rikked_str: str) -> list:
-    """
-    Parse the RIKKED column into a list of (severity, defect_id) tuples.
-
-    Input format examples:
-        "VO:100101460"           → [("VO", 100101460)]
-        "OV:100103882"           → [("OV", 100103882)]
-        "VO:100101460,OV:100103882" → [("VO", 100101460), ("OV", 100103882)]
-        ""  or NaN               → []
-
-    Severity levels:
-        VO  = VäheOluline (minor)
-        OV  = Oluline Viga (significant)
-        EOV = Eriti Ohtlik Viga (dangerous)
-    """
-    if not isinstance(rikked_str, str) or rikked_str.strip() == "":
-        return []
-
-    defects = []
-    # Split by common delimiters (newline, comma, semicolon)
-    parts = rikked_str.replace("\n", ",").replace(";", ",").split(",")
-    for part in parts:
-        part = part.strip()
-        if ":" in part:
-            severity, defect_id = part.split(":", 1)
-            severity = severity.strip()
-            try:
-                defect_id = int(defect_id.strip())
-                defects.append((severity, defect_id))
-            except ValueError:
-                continue
-    return defects
-
-
 def expand_defects(df: pd.DataFrame) -> pd.DataFrame:
     """
     Create additional columns from parsed defects:
@@ -144,11 +112,13 @@ def expand_defects(df: pd.DataFrame) -> pd.DataFrame:
     """
     parsed = df["RIKKED"].apply(parse_rikked)
 
+    counts = parsed.apply(count_severities)
+
     df["RIKETE_ARV"] = parsed.apply(len)
-    df["VO_ARV"] = parsed.apply(lambda x: sum(1 for s, _ in x if s == "VO"))
-    df["OV_ARV"] = parsed.apply(lambda x: sum(1 for s, _ in x if s == "OV"))
-    df["EOV_ARV"] = parsed.apply(lambda x: sum(1 for s, _ in x if s == "EOV"))
-    df["RIKE_IDS"] = parsed.apply(lambda x: [did for _, did in x])
+    df["VO_ARV"] = counts.apply(lambda x: x["VO"])
+    df["OV_ARV"] = counts.apply(lambda x: x["OV"])
+    df["EOV_ARV"] = counts.apply(lambda x: x["EOV"])
+    df["RIKE_IDS"] = parsed.apply(defect_ids)
 
     return df
 

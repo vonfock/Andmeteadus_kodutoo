@@ -41,4 +41,10 @@
 - `RIKKED` column in inspection data contains `SEVERITY:DEFECT_ID` pairs
 - `DEFECT_ID` maps to `rike.csv → ID`
 - Severity levels: VO (VäheOluline/minor), OV (Oluline Viga/significant), EOV (Eriti Ohtlik Viga/dangerous)
-- A single inspection can have multiple defects separated within the RIKKED field
+- A single inspection can have multiple defects separated within the RIKKED field; observed yearly CSVs use semicolons, and project parsers also accept commas/newlines defensively
+
+## Local cache and validation
+
+- `python src/data_cache.py --years 2023 2024 2025` downloads selected yearly CSVs into ignored `data/cache/`
+- Dashboard queries use `data/cache/yv_<year>.csv` automatically when the file exists; otherwise they fall back to the official remote URL
+- `python src/data_cache.py --years 2023 2024 2025 --validate-only` writes validation summaries to `data/processed/data_validation.csv` and `.json`

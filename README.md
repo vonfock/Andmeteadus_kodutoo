@@ -8,6 +8,18 @@ Analysing 15+ years of Estonian vehicle roadworthiness inspection (tehnoülevaat
 
 See `data/README.md` for the full data dictionary.
 
+## Grading Notebook
+
+The main artifact for assessment is:
+
+```text
+notebooks/00_hindamise_notebook.ipynb
+```
+
+This notebook contains the full assessable workflow in one place: data loading, data cleaning, visualisations, leakage-safe K-Means supplement, model training, evaluation metrics, and markdown conclusions. The Streamlit app is submitted separately as an interactive supplement, not as a replacement for the notebook.
+
+Older exploratory notebooks were removed from the submission path. Their relevant research questions, hypothesis caveats and modelling conclusions have been consolidated into `00_hindamise_notebook.ipynb` so the lecturer has one coherent file to review.
+
 ## Research Questions
 
 ### Exploratory analysis
@@ -22,31 +34,34 @@ See `data/README.md` for the full data dictionary.
 2. **Brand reliability** — Premium car brands pass first-time inspections at a higher rate than budget brands of the same age.
 3. **Station strictness** — High-volume urban inspection stations reject vehicles at a higher rate than low-volume rural stations.
 
-See `ANALYSIS_PLAN.md` for the full technical specification.
+See `docs/PROJECT_FINISH_PLAN.md`, `docs/PROJECT_AUDIT.md` and `docs/COURSE_ALIGNMENT.md` for planning notes, audit details and course-alignment rationale.
 
 ## Project Structure
 
 ```
-sissejuhatus_andmeteadusesse_grupitoo/
-├── data/
-│   ├── raw/                  # Original yearly CSVs (2010.csv – 2025.csv) + rike.csv
-│   ├── processed/            # Cleaned, combined, feature-engineered data
-│   └── README.md             # Data dictionary (ET + EN)
+Andmeteadus_kodutoo/
 ├── notebooks/
-│   ├── 01_eda.ipynb          # Exploratory data analysis & research questions
-│   ├── 02_hypotheses.ipynb   # Hypothesis testing & visualisations
-│   └── 03_modelling.ipynb    # ML experiments (clustering + classification)
+│   └── 00_hindamise_notebook.ipynb # Main grading notebook
+├── dashboard/
+│   └── app.py                # Streamlit dashboard
 ├── src/
-│   ├── data_loader.py        # Combine yearly CSVs into one dataset
-│   ├── data_cleaner.py       # Encoding fixes, NaN handling, defect parsing
-│   ├── feature_engineering.py# Feature creation for ML
+│   ├── data_cache.py         # Cache official yearly CSVs locally
+│   ├── data_loader.py        # Dashboard queries over cached/remote CSVs
+│   ├── defects.py            # Shared RIKKED parser
 │   ├── clustering.py         # K-Means clustering
 │   └── prediction.py         # Random Forest classifier + evaluation
-├── dashboard/
-│   └── app.py                # Streamlit dashboard (5 pages)
-├── .streamlit/
-│   └── config.toml           # Theme config
-├── ANALYSIS_PLAN.md          # Detailed technical spec for Claude Code
+├── data/
+│   ├── raw/rike.csv          # Defect code reference table
+│   ├── processed/            # Tracked model/cluster output artifacts
+│   └── README.md             # Data dictionary (ET + EN)
+├── models/
+│   ├── random_forest.pkl
+│   └── model_metadata.json
+├── tests/
+├── docs/
+│   ├── COURSE_ALIGNMENT.md
+│   ├── PROJECT_AUDIT.md
+│   └── PROJECT_FINISH_PLAN.md
 ├── requirements.txt
 ├── .gitignore
 └── README.md
@@ -61,8 +76,8 @@ sissejuhatus_andmeteadusesse_grupitoo/
 ### Installation
 
 ```bash
-git clone https://github.com/TereKruut/sissejuhatus_andmeteadusesse_grupitoo.git
-cd sissejuhatus_andmeteadusesse_grupitoo
+git clone https://github.com/vonfock/Andmeteadus_kodutoo.git
+cd Andmeteadus_kodutoo
 
 python -m venv venv
 source venv/bin/activate        # Linux/Mac
@@ -71,24 +86,46 @@ source venv/bin/activate        # Linux/Mac
 pip install -r requirements.txt
 ```
 
-### Download Data
+### Cache Data
 
-Go to [the dataset page](https://andmed.eesti.ee/datasets/maismaasoidukite-tehnoulevaatused-eestis), download each year's CSV into `data/raw/` named as `2010.csv`, `2011.csv` … `2025.csv`. Download `rike.csv` into `data/raw/` as well.
+The yearly inspection CSVs are not committed to the repository. For repeatable local work, cache selected yearly files before running the notebook or retraining the model:
+
+```bash
+python src/data_cache.py --years 2023 2024 2025
+python src/data_cache.py --years 2023 2024 2025 --validate-only
+```
 
 ### Run the pipeline
 
 ```bash
-python src/data_loader.py                   # Combine raw CSVs
-python src/data_cleaner.py                  # Clean and enrich
-python src/feature_engineering.py           # Build ML features
-python src/clustering.py                    # K-Means
-python src/prediction.py                    # Random Forest
+python src/data_cache.py --years 2023 2024 2025
+python src/data_cache.py --years 2023 2024 2025 --validate-only
+python src/prediction.py --years 2023 2024 2025
+python src/clustering.py --years 2023 2024 2025
 ```
+
+`src/prediction.py` reads the cached yearly files directly, trains the leakage-safe Random Forest pipeline with a temporal split, and regenerates `models/random_forest.pkl` plus `models/model_metadata.json`. The saved model intentionally excludes full-dataset target-derived pass-rate features and station strictness. It does use smoothed historical fail-rate features fitted inside the pipeline from training years only, plus the pre-inspection station code `PUNKTI_KOOD` as a categorical feature.
+
+Current 2025 holdout metrics after the historical-rate improvement: accuracy `0.570`, balanced accuracy `0.658`, ROC AUC `0.710`, and `Korras` F1 `0.678`. The model is still documented as a risk score, not an automatic decision system.
+
+The metadata also includes a temporal calibration check. Isotonic calibration trained without the 2025 test year improved probability quality substantially in the check (`Brier 0.224 -> 0.120`, `log loss 0.637 -> 0.387`), but the saved dashboard output is still presented as a risk score rather than an absolute probability.
+
+`src/clustering.py` regenerates the K-Means cluster profiles and elbow/silhouette plot for the Streamlit cluster page. It uses leakage-safe inputs and does not use pass/fail outcome or station strictness as clustering features.
 
 ### Launch Dashboard
 
 ```bash
 streamlit run dashboard/app.py
+```
+
+The dashboard opens without a password by default. If `.streamlit/secrets.toml` defines `APP_PASSWORD`, the app asks for that password before showing the pages.
+
+### Run the grading notebook
+
+Open `notebooks/00_hindamise_notebook.ipynb` in Jupyter or VS Code and run all cells. For faster repeated runs, build the local CSV cache first:
+
+```bash
+python src/data_cache.py --years 2023 2024 2025
 ```
 
 ## License

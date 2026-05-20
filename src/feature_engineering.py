@@ -136,7 +136,13 @@ def create_ml_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_feature_columns() -> list:
-    """Return the list of feature column names for modelling."""
+    """
+    Return leakage-safe feature columns for the supervised pass/fail model.
+
+    Target-derived pass rates and station strictness can still be useful for
+    exploratory analysis, but they are excluded from the final classifier
+    because the current pipeline calculates them before train/test splitting.
+    """
     return [
         "VANUS",
         "VANUS_RUUT",
@@ -144,12 +150,12 @@ def get_feature_columns() -> list:
         "KUU_SIN",
         "KUU_COS",
         "MARK_SAGEDUS",
-        "MARK_LABIMISE_MAAR",
         "MUDEL_SAGEDUS",
-        "MUDEL_LABIMISE_MAAR",
-        "KERETYYP_KOOD",
-        "PUNKTI_RANGUS",
         "EELMISED_YV",
+        "MARK",
+        "KATEGOORIA",
+        "KERETYYP",
+        "PUNKTI_KOOD",
     ]
 
 

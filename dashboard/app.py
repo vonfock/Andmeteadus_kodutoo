@@ -8,8 +8,23 @@ from pathlib import Path
 
 import streamlit as st
 
+# ── Page config ────────────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="Tehnoülevaatuste analüüs",
+    page_icon="🚗",
+    layout="wide",
+)
+
 
 def check_password():
+    try:
+        app_password = st.secrets.get("APP_PASSWORD")
+    except Exception:
+        app_password = None
+
+    if not app_password:
+        return
+
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
 
@@ -17,7 +32,7 @@ def check_password():
         st.title("🔒 Tehnoülevaatuste analüüs")
         password = st.text_input("Sisesta parool:", type="password")
         if st.button("Sisene"):
-            if password == st.secrets["APP_PASSWORD"]:
+            if password == app_password:
                 st.session_state.authenticated = True
                 st.rerun()
             else:
@@ -44,13 +59,6 @@ from src.data_loader import (
     q_top_defects,
     q_defects_by_mark_model_year,
     q_defects_summary_by_mark,
-)
-
-# ── Page config ────────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="Tehnoülevaatuste analüüs",
-    page_icon="🚗",
-    layout="wide",
 )
 
 AVAILABLE_YEARS = get_available_years()
@@ -494,7 +502,7 @@ elif page == "🔧 Rikete analüüs":
         "ning väljalaskeaasta kaupa."
     )
     st.caption(
-        "RIKKED veerg kujul: 'VO:100101460,OV:100103882' — "
+        "RIKKED veerg kujul: 'VO:100101460;OV:100103882' — "
         "VO = väheoluline, OV = oluline viga, EOV = eriti oluline viga."
     )
 
@@ -790,8 +798,8 @@ elif page == "🤖 Ennustamine":
 
     st.title("🤖 Ennusta tehnoülevaatuse tulemus")
     st.write(
-        "Sisesta sõiduki andmed ja mudel ennustab, kui tõenäoliselt sõiduk läbib "
-        "KORRALISE tehnoülevaatuse esimesel korral."
+        "Sisesta sõiduki andmed ja mudel annab riskiskoorina hinnangu, kui tõenäoliselt "
+        "sõiduk läbib KORRALISE tehnoülevaatuse esimesel korral."
     )
 
     MODEL_PATH = Path(__file__).parent.parent / "models" / "random_forest.pkl"
@@ -813,31 +821,84 @@ elif page == "🤖 Ennustamine":
         return model, meta
 
     model, meta = load_model()
-    feature_names = meta["features"]
+    feature_names = meta.get("features", [])
     metrics = meta.get("metrics", {})
     mark_lookup = meta.get("mark_lookup", {})
     mudel_lookup = meta.get("mudel_lookup", {})
-    station_lookup = meta.get("station_lookup", {})
+    leaky_features = {"MARK_LABIMISE_MAAR", "MUDEL_LABIMISE_MAAR", "PUNKTI_RANGUS"}
+    if set(feature_names) & leaky_features:
+        st.error(
+            "Salvestatud mudel kasutab vana lekkivate tunnustega skeemi. "
+            "Käivita `python src/prediction.py --years 2023 2024 2025`, "
+            "et luua notebookiga kooskõlas olev mudel."
+        )
+        st.stop()
 
     with st.expander("📊 Mudeli täpsus"):
-        cols = st.columns(4)
+        cols = st.columns(5)
         for col, (k, label) in zip(
             cols,
-            [("accuracy", "Täpsus"), ("f1", "F1"), ("roc_auc", "ROC AUC"), ("precision", "Precision")],
+            [
+                ("baseline_always_pass_accuracy", "Baseline"),
+                ("accuracy", "Accuracy"),
+                ("balanced_accuracy", "Balanced"),
+                ("roc_auc", "ROC AUC"),
+                ("f1", "F1"),
+            ],
         ):
             if k in metrics:
                 col.metric(label, f"{metrics[k]:.3f}")
+        threshold_rows = metrics.get("fail_threshold_summary", [])
+        if threshold_rows:
+            st.dataframe(_pd.DataFrame(threshold_rows).round(3), use_container_width=True, hide_index=True)
+        probability_quality = metrics.get("probability_quality", {})
+        if probability_quality:
+            q_cols = st.columns(3)
+            q_cols[0].metric("Brier", f"{probability_quality.get('brier_score', 0):.3f}")
+            q_cols[1].metric("Log loss", f"{probability_quality.get('log_loss', 0):.3f}")
+            q_cols[2].metric("ECE", f"{probability_quality.get('expected_calibration_error', 0):.3f}")
+        calibration = metrics.get("calibration_analysis")
+        if calibration:
+            st.caption(
+                "Ajapõhine kalibreerimiskatse: mudel õppis varasemalt aastalt, "
+                "kalibreerija järgmiselt aastalt ja kvaliteeti hinnati testiaastal."
+            )
+            st.dataframe(
+                _pd.DataFrame(
+                    [
+                        {
+                            "Variant": "Kalibreerimata",
+                            "Brier": calibration["raw_probability_quality"]["brier_score"],
+                            "Log loss": calibration["raw_probability_quality"]["log_loss"],
+                            "ECE": calibration["raw_probability_quality"]["expected_calibration_error"],
+                            "ROC AUC": calibration["raw_roc_auc"],
+                        },
+                        {
+                            "Variant": "Isotonic",
+                            "Brier": calibration["calibrated_probability_quality"]["brier_score"],
+                            "Log loss": calibration["calibrated_probability_quality"]["log_loss"],
+                            "ECE": calibration["calibrated_probability_quality"]["expected_calibration_error"],
+                            "ROC AUC": calibration["calibrated_roc_auc"],
+                        },
+                    ]
+                ).round(3),
+                use_container_width=True,
+                hide_index=True,
+            )
 
     st.divider()
     st.subheader("Sisesta sõiduki andmed")
 
-    KERETYYP_MAP = {
-        "Sedaan": 0, "Universaal": 1, "Luukpära": 2,
-        "Mahtuniversaal": 3, "Kaubik": 4, "Kupee": 5,
-        "Lahtine": 6, "Pikap": 7, "Mootorratas": 8,
-        "Mitmeotstarbeline": 9, "Madel": 10,
-        "Elamu": 11, "Sadul": 12, "Paadiveok": 13, "Kvadrik": 14,
-    }
+    category_options = meta.get("category_options") or ["M1", "N1", "O1", "L3e"]
+    body_type_options = meta.get("body_type_options") or [
+        "SEDAAN",
+        "UNIVERSAAL",
+        "LUUKPÄRA",
+        "KAUBIK",
+        "MOOTORRATAS",
+    ]
+    station_code_options = meta.get("station_code_options") or ["HA", "MM", "TA", "TR"]
+    latest_training_year = int(meta.get("latest_training_year", 2025))
 
     # Make and model selection
     col_mark, col_mudel = st.columns(2)
@@ -862,27 +923,28 @@ elif page == "🤖 Ennustamine":
 
     col1, col2 = st.columns(2)
     with col1:
-        reg_aasta = st.number_input("Tootmisaasta", min_value=1950, max_value=2025, value=2015, step=1)
-        keretyyp_label = st.selectbox("Keretüüp", list(KERETYYP_MAP.keys()), index=0)
-        keretyyp_kood = KERETYYP_MAP[keretyyp_label]
+        inspection_year = st.number_input(
+            "Ülevaatuse aasta",
+            min_value=2010,
+            max_value=max(2030, latest_training_year + 5),
+            value=latest_training_year,
+            step=1,
+        )
+        reg_aasta = st.number_input(
+            "Esmase registreerimise aasta",
+            min_value=1950,
+            max_value=int(inspection_year),
+            value=min(2015, int(inspection_year)),
+            step=1,
+        )
+        selected_category = st.selectbox("Sõidukikategooria", category_options, index=0)
     with col2:
-        if station_lookup:
-            station_options = sorted(station_lookup.keys())
-            selected_station = st.selectbox(
-                "Ülevaatuspunkt",
-                ["— vali ülevaatuspunkt —"] + station_options,
-                key="pred_station",
-            )
-            punkti_rangus = (
-                station_lookup[selected_station]
-                if selected_station != "— vali ülevaatuspunkt —"
-                else 15.0
-            )
-        else:
-            punkti_rangus = st.slider(
-                "Ülevaatuspunkti rangus (% läbikukkumisi, 0=leebe, 40=range)",
-                min_value=0.0, max_value=50.0, value=15.0, step=0.5,
-            )
+        selected_station_code = st.selectbox(
+            "Ülevaatuspunkti kood",
+            station_code_options,
+            index=0,
+        )
+        selected_body_type = st.selectbox("Keretüüp", body_type_options, index=0)
         eelmised_yv = st.number_input(
             "Varasemaid ülevaatusi sellel sõidukil", min_value=0, max_value=30, value=0, step=1
         )
@@ -895,17 +957,20 @@ elif page == "🤖 Ennustamine":
         format_func=lambda x: MONTH_NAMES[x],
     )
 
-    vanus = max(0, 2025 - int(reg_aasta))
+    vanus = max(0, int(inspection_year) - int(reg_aasta))
 
     mark_data = (
-        mark_lookup.get(selected_mark, {"sagedus": 50000, "labimise_maar": 0.75})
+        mark_lookup.get(selected_mark, {"sagedus": meta.get("default_mark_frequency", 50000)})
         if selected_mark != "— vali mark —"
-        else {"sagedus": 50000, "labimise_maar": 0.75}
+        else {"sagedus": meta.get("default_mark_frequency", 50000)}
     )
     mudel_data = (
-        mudel_lookup.get(selected_mark, {}).get(selected_mudel, {"sagedus": 1000, "labimise_maar": 0.75})
+        mudel_lookup.get(selected_mark, {}).get(
+            selected_mudel,
+            {"sagedus": meta.get("default_model_frequency", 1000)},
+        )
         if selected_mark != "— vali mark —" and selected_mudel != "— vali mudel —"
-        else {"sagedus": 1000, "labimise_maar": 0.75}
+        else {"sagedus": meta.get("default_model_frequency", 1000)}
     )
 
     input_vals = {
@@ -915,31 +980,60 @@ elif page == "🤖 Ennustamine":
         "KUU_SIN": float(_np.sin(2 * _np.pi * kuu / 12)),
         "KUU_COS": float(_np.cos(2 * _np.pi * kuu / 12)),
         "MARK_SAGEDUS": float(mark_data["sagedus"]),
-        "MARK_LABIMISE_MAAR": float(mark_data["labimise_maar"]),
         "MUDEL_SAGEDUS": float(mudel_data["sagedus"]),
-        "MUDEL_LABIMISE_MAAR": float(mudel_data["labimise_maar"]),
-        "KERETYYP_KOOD": float(keretyyp_kood),
-        "PUNKTI_RANGUS": float(punkti_rangus),
         "EELMISED_YV": float(eelmised_yv),
+        "MARK": selected_mark if selected_mark != "— vali mark —" else _np.nan,
+        "MUDEL": selected_mudel if selected_mudel != "— vali mudel —" else _np.nan,
+        "KATEGOORIA": selected_category,
+        "KERETYYP": selected_body_type,
+        "PUNKTI_KOOD": selected_station_code,
     }
 
+    threshold_rows = metrics.get("fail_threshold_summary", [])
+    risk_threshold = next(
+        (
+            float(row["threshold"])
+            for row in threshold_rows
+            if round(float(row.get("min_fail_recall", 0)), 2) == 0.80
+        ),
+        None,
+    )
+
     if st.button("Ennusta", type="primary"):
-        row = _pd.DataFrame([[input_vals[f] for f in feature_names]], columns=feature_names)
+        missing_features = [feature for feature in feature_names if feature not in input_vals]
+        if missing_features:
+            st.error(f"Mudeli sisendist puuduvad tunnused: {', '.join(missing_features)}")
+            st.stop()
+
+        row = _pd.DataFrame([{feature: input_vals[feature] for feature in feature_names}])
         prob = model.predict_proba(row)[0][1] * 100
+        fail_risk = 100 - prob
 
         st.divider()
-        if prob >= 75:
-            st.success(f"### ✅ Läbimise tõenäosus: **{prob:.1f}%**")
+        if risk_threshold is not None and fail_risk >= risk_threshold * 100:
+            st.warning(
+                f"### Riskirühmas: läbimise skoor **{prob:.1f}%**, "
+                f"läbikukkumise risk **{fail_risk:.1f}%**"
+            )
+        elif prob >= 75:
+            st.success(f"### Läbimise skoor: **{prob:.1f}%**")
         elif prob >= 50:
-            st.warning(f"### ⚠️ Läbimise tõenäosus: **{prob:.1f}%**")
+            st.info(f"### Läbimise skoor: **{prob:.1f}%**")
         else:
-            st.error(f"### ❌ Läbimise tõenäosus: **{prob:.1f}%**")
+            st.warning(f"### Läbimise skoor: **{prob:.1f}%**")
+
+        if risk_threshold is not None:
+            st.caption(
+                f"Riskilävi on võetud mudeli lävendianalüüsist: "
+                f"läbikukkumise risk >= {risk_threshold * 100:.1f}% annab "
+                "vähemalt 0,80 recall'i läbikukkujate leidmiseks."
+            )
 
         gauge = go.Figure(go.Indicator(
             mode="gauge+number",
             value=prob,
             number={"suffix": "%"},
-            title={"text": "Läbimise tõenäosus"},
+            title={"text": "Läbimise skoor"},
             gauge={
                 "axis": {"range": [0, 100]},
                 "bar": {"color": "darkblue"},
@@ -951,7 +1045,7 @@ elif page == "🤖 Ennustamine":
                 "threshold": {
                     "line": {"color": "black", "width": 3},
                     "thickness": 0.75,
-                    "value": 75,
+                    "value": (1 - risk_threshold) * 100 if risk_threshold is not None else 75,
                 },
             },
         ))
@@ -979,8 +1073,8 @@ elif page == "📦 Klastrid":
 
     st.title("📦 Sõidukite klastrid")
     st.write(
-        "K-Means klasterdamine grupeerib ülevaatused sarnaste profiilide järgi "
-        "(sõiduki vanus, keretüüp, ülevaatuspunkti rangus)."
+        "K-Means klasterdamine grupeerib ülevaatused lekkekindlate sisendtunnuste järgi. "
+        "Läbimistulemust kasutatakse ainult hiljem klastrite kirjeldamiseks."
     )
 
     PROFILES_PATH = Path(__file__).parent.parent / "data" / "processed" / "cluster_profiles.json"
@@ -996,31 +1090,53 @@ elif page == "📦 Klastrid":
     with open(PROFILES_PATH, "r", encoding="utf-8") as f:
         profiles = _json.load(f)
 
+    def _pct_number(value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = value.rstrip("%").strip()
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _pct_label(value):
+        number = _pct_number(value)
+        return "—" if number is None else f"{number:.1f}%"
+
+    def _top_make(profile):
+        if profile.get("top_make"):
+            return profile["top_make"]
+        if profile.get("top_makes"):
+            return ", ".join(list(profile["top_makes"].keys())[:3])
+        return "—"
+
     st.subheader(f"Leiti {len(profiles)} klastrit")
 
     cols = st.columns(len(profiles))
     for col, p in zip(cols, profiles):
         with col:
-            st.metric(f"Klaster {p['cluster']}", p["pct"])
+            st.metric(f"Klaster {p['cluster']}", _pct_label(p.get("pct")))
             st.write(f"**Keskmine vanus:** {p['avg_age']:.1f} a")
-            st.write(f"**Rangus:** {p['avg_strictness']:.1f}%")
+            st.write(f"**Kategooria:** {p.get('top_category', '—')}")
+            st.write(f"**Keretüüp:** {p.get('top_body_type', '—')}")
+            st.write(f"**Punkti kood:** {p.get('top_station_code', '—')}")
             if p.get("pass_rate") is not None:
                 st.write(f"**Läbimise %:** {p['pass_rate']:.1f}%")
-            if p.get("top_makes"):
-                top = list(p["top_makes"].keys())[:3]
-                st.write(f"**Top margid:** {', '.join(top)}")
+            st.write(f"**Top mark:** {_top_make(p)}")
 
     st.divider()
 
-    import pandas as _pd
     profile_df = _pd.DataFrame([
         {
             "Klaster": p["cluster"],
-            "Suurus": p["pct"],
+            "Osakaal (%)": _pct_number(p.get("pct")),
             "Keskmine vanus (a)": round(p["avg_age"], 1),
-            "Punkti rangus (%)": round(p["avg_strictness"], 1),
-            "Läbimise % (esimesel)": round(p["pass_rate"], 1) if p.get("pass_rate") is not None else "—",
-            "Top margid": ", ".join(list(p.get("top_makes", {}).keys())[:3]),
+            "Läbimise %": round(p["pass_rate"], 1) if p.get("pass_rate") is not None else None,
+            "Kategooria": p.get("top_category", "—"),
+            "Keretüüp": p.get("top_body_type", "—"),
+            "Punkti kood": p.get("top_station_code", "—"),
+            "Top mark": _top_make(p),
         }
         for p in profiles
     ])
@@ -1033,30 +1149,31 @@ elif page == "📦 Klastrid":
 
     st.divider()
     st.subheader("Klastrite võrdlus")
-    if len(profiles) > 1 and all(p.get("pass_rate") is not None for p in profiles):
+    if len(profiles) > 1 and profile_df["Läbimise %"].notna().all():
         fig_cluster = px.bar(
             profile_df,
             x="Klaster",
-            y="Läbimise % (esimesel)",
-            color="Läbimise % (esimesel)",
+            y="Läbimise %",
+            color="Läbimise %",
             color_continuous_scale="RdYlGn",
-            text="Läbimise % (esimesel)",
+            text="Läbimise %",
             title="Läbimise % klastri järgi",
-            labels={"Klaster": "Klaster", "Läbimise % (esimesel)": "Läbimise %"},
+            labels={"Klaster": "Klaster", "Läbimise %": "Läbimise %"},
         )
         fig_cluster.update_traces(texttemplate="%{text}%", textposition="outside")
         fig_cluster.update_layout(coloraxis_showscale=False)
         st.plotly_chart(fig_cluster, use_container_width=True)
 
-    fig_scatter = px.scatter(
-        profile_df,
-        x="Keskmine vanus (a)",
-        y="Punkti rangus (%)",
-        size=[float(str(p["pct"]).rstrip("%")) for p in profiles],
-        color=[f"Klaster {p['cluster']}" for p in profiles],
-        text=[f"K{p['cluster']}" for p in profiles],
-        title="Klastrid: vanus vs punkti rangus (suurus = klastri osakaal)",
-        labels={"x": "Keskmine vanus (a)", "y": "Punkti rangus (%)"},
-    )
-    fig_scatter.update_traces(textposition="top center")
-    st.plotly_chart(fig_scatter, use_container_width=True)
+    if len(profiles) > 1 and profile_df["Läbimise %"].notna().any():
+        fig_scatter = px.scatter(
+            profile_df,
+            x="Keskmine vanus (a)",
+            y="Läbimise %",
+            size="Osakaal (%)",
+            color=[f"Klaster {p['cluster']}" for p in profiles],
+            text=[f"K{p['cluster']}" for p in profiles],
+            title="Klastrid: vanus vs läbimise määr (suurus = klastri osakaal)",
+            labels={"Keskmine vanus (a)": "Keskmine vanus (a)", "Läbimise %": "Läbimise %"},
+        )
+        fig_scatter.update_traces(textposition="top center")
+        st.plotly_chart(fig_scatter, use_container_width=True)
