@@ -99,7 +99,6 @@ page = st.sidebar.radio(
         "🔧 Rikete analüüs",
         "🔍 Otsi margi järgi",
         "🤖 Ennustamine",
-        "📦 Klastrid",
     ],
 )
 
@@ -889,16 +888,64 @@ elif page == "🤖 Ennustamine":
     st.divider()
     st.subheader("Sisesta sõiduki andmed")
 
-    category_options = meta.get("category_options") or ["M1", "N1", "O1", "L3e"]
-    body_type_options = meta.get("body_type_options") or [
-        "SEDAAN",
-        "UNIVERSAAL",
-        "LUUKPÄRA",
-        "KAUBIK",
-        "MOOTORRATAS",
-    ]
-    station_code_options = meta.get("station_code_options") or ["HA", "MM", "TA", "TR"]
     latest_training_year = int(meta.get("latest_training_year", 2025))
+
+    # Categories relevant for regular vehicle inspections (tractors, trams, etc. excluded)
+    _RELEVANT_CATEGORIES = [
+        "M1", "M1G",
+        "M2", "M3", "M3G",
+        "N1", "N1G", "N2", "N2G", "N3", "N3G",
+        "L3e", "L4e", "L5e", "L6e", "L7e",
+        "O1", "O2", "O3", "O4",
+    ]
+    _trained_categories = set(meta.get("category_options") or [])
+    category_options = [c for c in _RELEVANT_CATEGORIES if c in _trained_categories]
+    if not category_options:
+        category_options = sorted(_trained_categories)
+
+    # Valid body types per category, cross-filtered to what the model was trained on
+    _KERETYYP_BY_KATEGOORIA = {
+        "M1":  ["SEDAAN", "UNIVERSAAL", "LUUKPÄRA", "MAHTUNIVERSAAL", "KUPEE", "PIKAP",
+                "LAHTINE", "LIMUSIIN", "KOMBI", "MITMEOTSTARBELINE SÕIDUK"],
+        "M1G": ["SEDAAN", "UNIVERSAAL", "LUUKPÄRA", "MAHTUNIVERSAAL", "KUPEE", "PIKAP",
+                "LAHTINE", "LIMUSIIN", "KOMBI", "MITMEOTSTARBELINE SÕIDUK"],
+        "M2":  ["BUSS", "LIIGENDBUSS", "KORRUSBUSS", "KIIRABI", "KOMBI",
+                "MITMEOTSTARBELINE SÕIDUK"],
+        "M3":  ["BUSS", "LIIGENDBUSS", "KORRUSBUSS", "KIIRABI", "MITMEOTSTARBELINE SÕIDUK"],
+        "M3G": ["BUSS", "LIIGENDBUSS", "KORRUSBUSS", "MITMEOTSTARBELINE SÕIDUK"],
+        "N1":  ["KAUBIK", "FURGOON", "PIKAP", "KÜLMIK", "ISOTERMILINE", "PAAK",
+                "KOMBI", "MITMEOTSTARBELINE SÕIDUK"],
+        "N1G": ["KAUBIK", "FURGOON", "PIKAP", "KÜLMIK", "ISOTERMILINE", "PAAK",
+                "MITMEOTSTARBELINE SÕIDUK"],
+        "N2":  ["KALLUR", "KAUBIK", "FURGOON", "KONTEINERIVEOK", "KÜLMIK", "ISOTERMILINE",
+                "PAAK", "SADUL", "VEDUR", "METSAVEOK", "SÕIDUKIVEOK", "PRÜGIVEOK",
+                "PUKSIIRAUTO", "REDELAUTO", "PÄÄSTESÕIDUK", "BETOONIPUMP", "BETOONISEGISTI",
+                "KRAANA", "PUITMATERJALI VEDU", "ELUSLOOMADE VEOK", "KLAASIVEOK",
+                "MITMEOTSTARBELINE SÕIDUK"],
+        "N2G": ["KALLUR", "KAUBIK", "KONTEINERIVEOK", "PAAK", "MITMEOTSTARBELINE SÕIDUK"],
+        "N3":  ["KALLUR", "KAUBIK", "FURGOON", "KONTEINERIVEOK", "KÜLMIK", "ISOTERMILINE",
+                "PAAK", "SADUL", "VEDUR", "METSAVEOK", "SÕIDUKIVEOK", "PRÜGIVEOK",
+                "PUKSIIRAUTO", "REDELAUTO", "PÄÄSTESÕIDUK", "BETOONIPUMP", "BETOONISEGISTI",
+                "KRAANA", "PUITMATERJALI VEDU", "ELUSLOOMADE VEOK", "KLAASIVEOK",
+                "MITMOOTSTARBELINE SÕIDUK"],
+        "N3G": ["KALLUR", "KAUBIK", "KONTEINERIVEOK", "PAAK", "SADUL",
+                "MITMEOTSTARBELINE SÕIDUK"],
+        "L3e": ["MOOTORRATAS", "REISIMOOTORRATAS", "SPORTMOOTORRATAS", "ENDUURO"],
+        "L4e": ["KÜLGHAAGISEGA MOOTORRATAS"],
+        "L5e": ["TRAIK"],
+        "L6e": ["KVADRIK", "MOTOROLLER", "VEOMOTOROLLER"],
+        "L7e": ["KVADRIK", "VEOKVADRIK", "MOTOROLLER"],
+        "O1":  ["HAAGIS", "JÄIGA RAAMIGA", "LIIGENDRAAMIGA", "KALLUR", "KÜLMIK",
+                "ISOTERMILINE", "PAAK", "RUNG", "MUU"],
+        "O2":  ["HAAGIS", "JÄIGA RAAMIGA", "LIIGENDRAAMIGA", "KALLUR", "KÜLMIK",
+                "ISOTERMILINE", "PAAK", "RUNG", "MUU"],
+        "O3":  ["HAAGIS", "JÄIGA RAAMIGA", "LIIGENDRAAMIGA", "KALLUR", "KÜLMIK",
+                "ISOTERMILINE", "PAAK", "RUNG", "MUU", "ELUSLOOMADE VEOK"],
+        "O4":  ["HAAGIS", "JÄIGA RAAMIGA", "LIIGENDRAAMIGA", "KALLUR", "KÜLMIK",
+                "ISOTERMILINE", "PAAK", "RUNG", "MUU", "ELUSLOOMADE VEOK"],
+    }
+    _trained_body_types = set(meta.get("body_type_options") or [])
+    station_code_options = meta.get("station_code_options") or ["HA", "MM", "TA", "TR"]
 
     # Make and model selection
     col_mark, col_mudel = st.columns(2)
@@ -920,6 +967,11 @@ elif page == "🤖 Ennustamine":
             ["— vali mudel —"] + mudel_options,
             key="pred_mudel",
         )
+    if selected_mudel == "— vali mudel —":
+        st.caption(
+            "ℹ️ Mudel valimata — margi-mudeli ajaloolist riskimäära ei kasutata, "
+            "mudel kasutab margi keskmist."
+        )
 
     col1, col2 = st.columns(2)
     with col1:
@@ -938,13 +990,27 @@ elif page == "🤖 Ennustamine":
             step=1,
         )
         selected_category = st.selectbox("Sõidukikategooria", category_options, index=0)
+
+    # Body types valid for the selected category, filtered to those seen in training data
+    _valid_body_types = [
+        bt for bt in _KERETYYP_BY_KATEGOORIA.get(selected_category, [])
+        if bt in _trained_body_types
+    ]
+    if not _valid_body_types:
+        _valid_body_types = sorted(_trained_body_types)
+
     with col2:
-        selected_station_code = st.selectbox(
+        _station_sentinel = "— ei tea (kasutan keskmist) —"
+        selected_station_raw = st.selectbox(
             "Ülevaatuspunkti kood",
-            station_code_options,
+            [_station_sentinel] + station_code_options,
             index=0,
         )
-        selected_body_type = st.selectbox("Keretüüp", body_type_options, index=0)
+        st.caption("Kood on 2-tähtne lühend ülevaatuspunkti jaoks. Kui ei tea, jäta vaikimisi.")
+        selected_station_code = (
+            None if selected_station_raw == _station_sentinel else selected_station_raw
+        )
+        selected_body_type = st.selectbox("Keretüüp", _valid_body_types, index=0)
         eelmised_yv = st.number_input(
             "Varasemaid ülevaatusi sellel sõidukil", min_value=0, max_value=30, value=0, step=1
         )
@@ -986,7 +1052,7 @@ elif page == "🤖 Ennustamine":
         "MUDEL": selected_mudel if selected_mudel != "— vali mudel —" else _np.nan,
         "KATEGOORIA": selected_category,
         "KERETYYP": selected_body_type,
-        "PUNKTI_KOOD": selected_station_code,
+        "PUNKTI_KOOD": selected_station_code if selected_station_code else _np.nan,
     }
 
     threshold_rows = metrics.get("fail_threshold_summary", [])
@@ -1062,118 +1128,3 @@ elif page == "🤖 Ennustamine":
                 title="Tunnuste olulisus (Random Forest)",
             )
             st.plotly_chart(fig_fi, use_container_width=True)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE 8 — Clusters (Klastrid)
-# ══════════════════════════════════════════════════════════════════════════════
-elif page == "📦 Klastrid":
-    import json as _json
-    import pandas as _pd
-
-    st.title("📦 Sõidukite klastrid")
-    st.write(
-        "K-Means klasterdamine grupeerib ülevaatused lekkekindlate sisendtunnuste järgi. "
-        "Läbimistulemust kasutatakse ainult hiljem klastrite kirjeldamiseks."
-    )
-
-    PROFILES_PATH = Path(__file__).parent.parent / "data" / "processed" / "cluster_profiles.json"
-    ELBOW_PATH = Path(__file__).parent.parent / "data" / "processed" / "elbow_plot.png"
-
-    if not PROFILES_PATH.exists():
-        st.warning(
-            "Klastrite fail (`data/processed/cluster_profiles.json`) puudub. "
-            "Käivita esmalt `python src/clustering.py`."
-        )
-        st.stop()
-
-    with open(PROFILES_PATH, "r", encoding="utf-8") as f:
-        profiles = _json.load(f)
-
-    def _pct_number(value):
-        if value is None:
-            return None
-        if isinstance(value, str):
-            value = value.rstrip("%").strip()
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
-    def _pct_label(value):
-        number = _pct_number(value)
-        return "—" if number is None else f"{number:.1f}%"
-
-    def _top_make(profile):
-        if profile.get("top_make"):
-            return profile["top_make"]
-        if profile.get("top_makes"):
-            return ", ".join(list(profile["top_makes"].keys())[:3])
-        return "—"
-
-    st.subheader(f"Leiti {len(profiles)} klastrit")
-
-    cols = st.columns(len(profiles))
-    for col, p in zip(cols, profiles):
-        with col:
-            st.metric(f"Klaster {p['cluster']}", _pct_label(p.get("pct")))
-            st.write(f"**Keskmine vanus:** {p['avg_age']:.1f} a")
-            st.write(f"**Kategooria:** {p.get('top_category', '—')}")
-            st.write(f"**Keretüüp:** {p.get('top_body_type', '—')}")
-            st.write(f"**Punkti kood:** {p.get('top_station_code', '—')}")
-            if p.get("pass_rate") is not None:
-                st.write(f"**Läbimise %:** {p['pass_rate']:.1f}%")
-            st.write(f"**Top mark:** {_top_make(p)}")
-
-    st.divider()
-
-    profile_df = _pd.DataFrame([
-        {
-            "Klaster": p["cluster"],
-            "Osakaal (%)": _pct_number(p.get("pct")),
-            "Keskmine vanus (a)": round(p["avg_age"], 1),
-            "Läbimise %": round(p["pass_rate"], 1) if p.get("pass_rate") is not None else None,
-            "Kategooria": p.get("top_category", "—"),
-            "Keretüüp": p.get("top_body_type", "—"),
-            "Punkti kood": p.get("top_station_code", "—"),
-            "Top mark": _top_make(p),
-        }
-        for p in profiles
-    ])
-    st.dataframe(profile_df, use_container_width=True, hide_index=True)
-
-    if ELBOW_PATH.exists():
-        st.divider()
-        st.subheader("Optimaalse k leidmine")
-        st.image(str(ELBOW_PATH), caption="Elbow-meetod ja siluetiskoor")
-
-    st.divider()
-    st.subheader("Klastrite võrdlus")
-    if len(profiles) > 1 and profile_df["Läbimise %"].notna().all():
-        fig_cluster = px.bar(
-            profile_df,
-            x="Klaster",
-            y="Läbimise %",
-            color="Läbimise %",
-            color_continuous_scale="RdYlGn",
-            text="Läbimise %",
-            title="Läbimise % klastri järgi",
-            labels={"Klaster": "Klaster", "Läbimise %": "Läbimise %"},
-        )
-        fig_cluster.update_traces(texttemplate="%{text}%", textposition="outside")
-        fig_cluster.update_layout(coloraxis_showscale=False)
-        st.plotly_chart(fig_cluster, use_container_width=True)
-
-    if len(profiles) > 1 and profile_df["Läbimise %"].notna().any():
-        fig_scatter = px.scatter(
-            profile_df,
-            x="Keskmine vanus (a)",
-            y="Läbimise %",
-            size="Osakaal (%)",
-            color=[f"Klaster {p['cluster']}" for p in profiles],
-            text=[f"K{p['cluster']}" for p in profiles],
-            title="Klastrid: vanus vs läbimise määr (suurus = klastri osakaal)",
-            labels={"Keskmine vanus (a)": "Keskmine vanus (a)", "Läbimise %": "Läbimise %"},
-        )
-        fig_scatter.update_traces(textposition="top center")
-        st.plotly_chart(fig_scatter, use_container_width=True)
