@@ -526,14 +526,26 @@ def q_defects_by_mark_model_year(
 
 
 @st.cache_data(show_spinner=False)
-def q_defects_summary_by_mark(years: list, top_n: int = 20) -> pd.DataFrame:
+def q_defects_summary_by_mark(
+    years: list, top_n: int = 20, min_per_year: int = 100
+) -> pd.DataFrame:
     """
-    Top N car marks ranked by total number of defects found (all severities).
-    Used for the overview chart on the defects page.
+    Top N car marks ranked by defects per inspection (normalised rate).
+    Returns rikeid_protsent = total defects / total inspections * 100.
+    Marks with fewer than min_per_year * len(years) total inspections are excluded.
     """
     urls = _urls_list(years)
+    min_total = min_per_year * len(years)
     return duckdb.sql(f"""
-        WITH exploded AS (
+        WITH all_inspections AS (
+            SELECT MARK, COUNT(*) AS kokku_ylevaatusi
+            FROM read_csv_auto({urls}, delim=',', header=true, encoding='utf-8')
+            WHERE YLEVAATUSLIIK = 'KORRALINE'
+              AND MARK IS NOT NULL AND MARK != ''
+            GROUP BY MARK
+            HAVING COUNT(*) >= {min_total}
+        ),
+        exploded AS (
             SELECT
                 MARK,
                 TRIM(SPLIT_PART(TRIM(entry), ':', 1)) AS raskusaste,
@@ -547,17 +559,29 @@ def q_defects_summary_by_mark(years: list, top_n: int = 20) -> pd.DataFrame:
                   AND MARK IS NOT NULL AND MARK != ''
             )
             WHERE TRIM(entry) != ''
+        ),
+        defects AS (
+            SELECT
+                MARK,
+                COUNT(*)                                           AS rikeid_kokku,
+                SUM(CASE WHEN raskusaste='VO'  THEN 1 ELSE 0 END) AS vo,
+                SUM(CASE WHEN raskusaste='OV'  THEN 1 ELSE 0 END) AS ov,
+                SUM(CASE WHEN raskusaste='EOV' THEN 1 ELSE 0 END) AS eov
+            FROM exploded
+            WHERE raskusaste IN ('VO', 'OV', 'EOV')
+              AND TRY_CAST(rike_id AS INTEGER) IS NOT NULL
+            GROUP BY MARK
         )
         SELECT
-            MARK,
-            COUNT(*)                                                AS rikeid_kokku,
-            SUM(CASE WHEN raskusaste='VO'  THEN 1 ELSE 0 END)      AS vo,
-            SUM(CASE WHEN raskusaste='OV'  THEN 1 ELSE 0 END)      AS ov,
-            SUM(CASE WHEN raskusaste='EOV' THEN 1 ELSE 0 END)      AS eov
-        FROM exploded
-        WHERE raskusaste IN ('VO', 'OV', 'EOV')
-          AND TRY_CAST(rike_id AS INTEGER) IS NOT NULL
-        GROUP BY MARK
-        ORDER BY rikeid_kokku DESC
+            d.MARK,
+            d.rikeid_kokku,
+            a.kokku_ylevaatusi,
+            ROUND(d.rikeid_kokku * 100.0 / a.kokku_ylevaatusi, 2) AS rikeid_protsent,
+            d.vo,
+            d.ov,
+            d.eov
+        FROM defects d
+        JOIN all_inspections a ON d.MARK = a.MARK
+        ORDER BY rikeid_protsent DESC
         LIMIT {top_n}
     """).df()

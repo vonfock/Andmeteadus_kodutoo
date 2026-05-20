@@ -290,8 +290,9 @@ elif page == "👤 Inspektorite rangus":
             with col_l:
                 fig_t = px.bar(
                     toughest,
-                    x="kood_str",
-                    y="labimise_protsent",
+                    x="labimise_protsent",
+                    y="kood_str",
+                    orientation="h",
                     color="labimise_protsent",
                     color_continuous_scale="Reds_r",
                     text="labimise_protsent",
@@ -301,20 +302,21 @@ elif page == "👤 Inspektorite rangus":
                         "kood_str": "Inspektori kood",
                         "labimise_protsent": "Läbimise %",
                     },
-                    category_orders={"kood_str": toughest["kood_str"].tolist()},
                 )
                 fig_t.update_traces(texttemplate="%{text}%", textposition="outside")
                 fig_t.update_layout(
                     coloraxis_showscale=False,
-                    yaxis_range=[0, 105],
+                    xaxis_range=[0, 105],
+                    yaxis={"type": "category", "categoryorder": "total descending"},
                 )
                 st.plotly_chart(fig_t, use_container_width=True)
 
             with col_r:
                 fig_e = px.bar(
                     easiest,
-                    x="kood_str",
-                    y="labimise_protsent",
+                    x="labimise_protsent",
+                    y="kood_str",
+                    orientation="h",
                     color="labimise_protsent",
                     color_continuous_scale="Greens",
                     text="labimise_protsent",
@@ -324,12 +326,12 @@ elif page == "👤 Inspektorite rangus":
                         "kood_str": "Inspektori kood",
                         "labimise_protsent": "Läbimise %",
                     },
-                    category_orders={"kood_str": easiest["kood_str"].tolist()},
                 )
                 fig_e.update_traces(texttemplate="%{text}%", textposition="outside")
                 fig_e.update_layout(
                     coloraxis_showscale=False,
-                    yaxis_range=[0, 105],
+                    xaxis_range=[0, 105],
+                    yaxis={"type": "category", "categoryorder": "total ascending"},
                 )
                 st.plotly_chart(fig_e, use_container_width=True)
 
@@ -667,16 +669,23 @@ elif page == "🔧 Rikete analüüs":
 
     if not mark_def_df.empty:
         fig_marks = px.bar(
-            mark_def_df.sort_values("rikeid_kokku"),
-            x="rikeid_kokku",
+            mark_def_df.sort_values("rikeid_protsent"),
+            x="rikeid_protsent",
             y="MARK",
             orientation="h",
-            color="rikeid_kokku",
+            color="rikeid_protsent",
             color_continuous_scale="Reds",
-            hover_data=["vo", "ov", "eov"],
-            title="Top 20 märki rikete arvu järgi",
-            labels={"rikeid_kokku": "Rikeid kokku", "MARK": "Märk"},
+            hover_data=["rikeid_kokku", "kokku_ylevaatusi", "vo", "ov", "eov"],
+            text="rikeid_protsent",
+            title="Top 20 marki rikete määra järgi (rikkeid 100 ülevaatuse kohta, vähemalt 100 ülevaatust margi kohta)",
+            labels={
+                "rikeid_protsent": "Rikkeid / 100 ülevaatust",
+                "MARK": "Märk",
+                "rikeid_kokku": "Rikkeid kokku",
+                "kokku_ylevaatusi": "Ülevaatusi kokku",
+            },
         )
+        fig_marks.update_traces(texttemplate="%{text:.1f}", textposition="outside")
         fig_marks.update_layout(
             coloraxis_showscale=False,
             yaxis={"categoryorder": "total ascending"},
